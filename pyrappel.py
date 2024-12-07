@@ -219,7 +219,7 @@ class ELF:
 
         with open(self.out, 'wb') as f:
             f.write(e.raw)
-        f.close()
+            f.flush()
         return size
 
     def __gen_elf64(self):
