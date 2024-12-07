@@ -1,7 +1,7 @@
 # Create a binary data
 from ctypes import c_uint32, c_uint8, c_uint16, c_int16, c_int32, c_uint64, c_int64, c_size_t
 from ctypes import Structure
-from ctypes import create_string_buffer, cast, POINTER, sizeof, memmove
+from ctypes import create_string_buffer, cast, POINTER, sizeof, memset, memmove, addressof
 
 # Page size of the system
 PAGE_SIZE   = 1 << 12
@@ -125,6 +125,7 @@ EV_CURRENT = 1
 # e_ident[EI_OSABI]
 ELFOSABI_NONE = 0
 
+TRAP = 0xcc
 
 class ELF:
     def __init__(self, arch, out=None, start=None, code=None, code_size=None):
@@ -171,7 +172,10 @@ class ELF:
         pad_size: c_size_t = ((self.code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)) - self.code_size
         size: c_size_t = PAGE_SIZE + pg_align_dist + self.code_size + pad_size
 
-        e: c_uint8 = create_string_buffer(size)
+        e = create_string_buffer(size)
+        memset(e, TRAP, size)
+
+        # e: c_uint8 = create_string_buffer(size)
         ehdr: Elf32_Ehdr = cast(e, POINTER(Elf32_Ehdr)).contents
 
         ehdr.e_ident[0] = ELFMAG0
@@ -182,8 +186,8 @@ class ELF:
         ehdr.e_ident[5] = ELFDATA2LSB
         ehdr.e_ident[6] = EV_CURRENT
         ehdr.e_ident[7] = ELFOSABI_NONE
+        ehdr.e_ident[9] = 0
         # Padding
-        ehdr.e_ident[8:16] = [0] * 8
         ehdr.e_type = ET_EXEC
         ehdr.e_machine = EM_386
         ehdr.e_version = EV_CURRENT
@@ -197,8 +201,9 @@ class ELF:
         ehdr.e_shentsize = 0
         ehdr.e_shnum = 0
         ehdr.e_shstrndx = 0
-
-        phdr: Elf32_Phdr = cast(e[ehdr.e_phoff:], POINTER(Elf32_Phdr)).contents
+        
+        phdr_addess = addressof(e) + sizeof(Elf32_Ehdr)
+        phdr: Elf32_Phdr = cast(phdr_addess, POINTER(Elf32_Phdr)).contents
         phdr.p_type = PT_LOAD
         phdr.p_flags = PF_X | PF_R
         phdr.p_offset = PAGE_SIZE
@@ -214,7 +219,6 @@ class ELF:
 
         with open(self.out, 'wb') as f:
             f.write(e.raw)
-            f.flush()
         f.close()
         return size
 
@@ -224,8 +228,8 @@ class ELF:
 if __name__ == '__main__':
     elf = ELF(32)
     elf.out = 'bin/test.elf'
-    elf.start = 0x1000
-    elf.code = b'\x90\x90\x90\x90\x90'
+    elf.start = 0x400000
+    elf.code = b'\x89\xE3'
     elf.code_size = len(elf.code)
     elf.gen_elf()
     print('Done')
