@@ -387,24 +387,204 @@ class RappelKeystone:
 import sys
 import ctypes
 import ctypes.util
+import signal
 
-PTRACE_TRACEME = 0
+from ctypes import c_long, c_ushort, c_int, c_char_p
 
 # We need to use the libc library to call ptrace instead of using the ptrace module
 libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
 
-class Ptrace:
-    def __init__(self):
-        pass
+# ptrace(2) constants from sys/ptrace.h
+PTRACE_TRACEME = 0
+PTRACE_PEEKDATA = 2
+PTRACE_EVENT_EXIT = 6
+PTRACE_CONT = 7
+PTRACE_DETACH = 17
+PTRACE_O_TRACEEXIT = 64
+PTRACE_SETOPTIONS = 0x4200
+PTRACE_GETEVENTMSG = 0x4201
+PTRACE_GETSIGINFO = 0x4202
+PTRACE_GETREGSET = 0x4204
 
+NT_PRSTATUS = 1
+NT_PRFPREG = 2
+NT_PRXFPREG = 0x46e62b7f
+
+class user_fpregs_struct_x86(Structure):
+    _fields_ = [
+        ('cwd', c_long),
+        ('swd', c_long),
+        ('twd', c_long),
+        ('fip', c_long),
+        ('fcs', c_long),
+        ('foo', c_long),
+        ('fos', c_long),
+        ('st_space', c_long * 20),
+    ]
+
+class user_fpxregs_struct_x86(Structure):
+    _fields_ = [
+        ('cwd', c_ushort),
+        ('swd', c_ushort),
+        ('twd', c_ushort),
+        ('fop', c_ushort),
+        ('fip', c_long),
+        ('fcs', c_long),
+        ('foo', c_long),
+        ('fos', c_long),
+        ('mxcsr', c_long),
+        ('res', c_long),
+        ('st_space', c_long * 32),
+        ('xmm_space', c_long * 64),
+        ('padding', c_long * 24),
+    ]
+
+class user_regs_struct_x86(Structure):
+    _fields_ = [
+        ('ebx', c_long),
+        ('ecx', c_long),
+        ('edx', c_long),
+        ('esi', c_long),
+        ('edi', c_long),
+        ('ebp', c_long),
+        ('eax', c_long),
+        ('ds', c_long),
+        ('es', c_long),
+        ('fs', c_long),
+        ('gs', c_long),
+        ('orig_eax', c_long),
+        ('eip', c_long),
+        ('cs', c_long),
+        ('eflags', c_long),
+        ('esp', c_long),
+        ('ss', c_long)
+    ]
+
+class IOVec(Structure):
+    _fields_ = [
+        ("iov_base", ctypes.c_void_p),  # Pointer to the data
+        ("iov_len", ctypes.c_size_t),  # Length of the data
+    ]
+
+class proc_info_t(Structure):
+    _fields_ = [
+        ('pid', c_long),
+        ('regs_struct', user_regs_struct_x86),
+        ('old_regs_struct', user_regs_struct_x86),
+        ('regs', IOVec),
+
+        ('fpregs_struct', user_fpregs_struct_x86),
+        ('old_fpregs_struct', user_fpregs_struct_x86),
+        ('fpregs', IOVec),
+
+        ('fpxregs_struct', user_fpxregs_struct_x86),
+        ('old_fpxregs_struct', user_fpxregs_struct_x86),
+        ('fpxregs', IOVec),
+
+        ('sig', c_int),
+        ('exit_code', c_int),
+    ]
+
+class Ptrace:
     def child(self, exe_fd):
         try:
             libc.ptrace(PTRACE_TRACEME, 0, 0, 0)
-            argv = [f'/proc/self/fd/{exe_fd}']
-            os.execve(exe_fd, argv, {})
+            argv = (c_char_p * 1)(None)
+            env = (c_char_p * 1)(None)
+            libc.fexecve(exe_fd, argv, env)
         except Exception as e:
             print(f"[-] Error starting process: {e}")
             sys.exit(1)
+
+    def launch(self, pid):
+        try:
+            # waitpid(2) status
+            status = ctypes.c_int32(0)
+            libc.waitpid(pid, ctypes.byref(status), 0)
+            
+            if os.WIFEXITED(status.value):
+                print("[+] Process exited normally.")
+            
+            libc.ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACEEXIT)
+        except Exception as e:
+            print(f"[-] Error continuing process: {e}")
+            sys.exit(1)
+
+    def cont(self, pid, info: proc_info_t):
+        try:
+            self.__ptrace_collect_regs(pid, info)
+            libc.ptrace(PTRACE_CONT, pid, 0, 0)
+        except Exception as e:
+            print(f"[-] Error continuing process: {e}")
+            sys.exit(1)
+
+    def reap(self, pid, info: proc_info_t):
+        try:
+            status = ctypes.c_int32(0)
+            libc.waitpid(pid, ctypes.byref(status), 0)
+
+            if os.WIFEXITED(status.value):
+                print("[+] Process exited normally.")
+                return 1
+
+            if os.WIFSIGNALED(status.value):
+                print(f"[-] Process exited with signal {status.value & 0x7f}")
+                info.sig = status.value & 0x7f
+                return 1
+
+            if status.value >> 8 == (signal.SIGTRAP | (PTRACE_EVENT_EXIT << 8)):
+                self.__exited_collect_regs(pid, info)
+                return 1
+            
+            self.__ptrace_collect_regs(pid, info)
+
+            if status.value >> 8 == signal.SIGTRAP:
+                return 0
+            
+        except Exception as e:
+            print(f"[-] Error reaping process: {e}")
+            sys.exit(1)
+
+    def init_proc_info(self, info: proc_info_t):
+        info.pid = -1
+        info.old_regs_struct = user_regs_struct_x86()
+        info.regs_struct = user_regs_struct_x86()
+        info.regs = IOVec()
+
+        info.old_fpregs_struct = user_fpregs_struct_x86()
+        info.fpregs_struct = user_fpregs_struct_x86()
+        info.fpregs = IOVec()
+
+        info.old_fpxregs_struct = user_fpxregs_struct_x86()
+        info.fpxregs_struct = user_fpxregs_struct_x86()
+        info.fpxregs = IOVec()
+
+        info.sig = -1
+        info.exit_code = -1
+
+    def __exited_collect_regs(self, pid, info: proc_info_t):
+        self.__ptrace_collect_regs(pid, info)
+        
+        sig = c_int(0)
+        libc.ptrace(PTRACE_GETSIGINFO, pid, None, ctypes.byref(sig))
+
+        info.sig = sig.value
+
+        libc.ptrace(PTRACE_GETEVENTMSG, pid, None, ctypes.byref(info.exit_code))
+
+    def __ptrace_collect_regs(self, pid, info: proc_info_t):
+        info.pid = pid
+        info.old_regs_struct = info.regs_struct
+        libc.ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, ctypes.byref(info.regs))
+        
+        info.old_fpregs_struct = info.fpregs_struct
+        libc.ptrace(PTRACE_GETREGSET, pid, NT_PRFPREG, ctypes.byref(info.fpregs))
+        
+        info.old_fpxregs_struct = info.fpxregs_struct
+        libc.ptrace(PTRACE_GETREGSET, pid, NT_PRXFPREG, ctypes.byref(info.fpxregs))
+
+        info.sig = -1
+        info.exit_code = -1
 # endregion
 
 
@@ -412,7 +592,7 @@ class Ptrace:
 class Rappel:
     def __init__(self, arch=64):
         self.arch = arch
-        self.ptrace = None
+        self.ptrace = Ptrace()
 
         buffer: Array = create_string_buffer(PAGE_SIZE)
         memset(buffer, TRAP, PAGE_SIZE)
@@ -445,19 +625,58 @@ class Rappel:
         try:
             trace_pid = os.fork()
             if trace_pid == 0:
-                self.ptrace = Ptrace()
                 self.ptrace.child(self.exe_fd)
+                os.abort()
             elif trace_pid < 0:
                 raise OSError(f"Failed to fork: {os.strerror(ctypes.get_errno())}")
+            
+            os.close(self.exe_fd)
             return trace_pid
         except Exception as e:
             print(f"[-] Error forking: {e}")
             return None
         
-    def interact(self):
-        tracee = self.__trace_child()
-        pass
+    def display_info(self, info: proc_info_t):
+        regs: user_regs_struct_x86 = info.regs_struct
+        fpregs: user_fpregs_struct_x86 = info.fpregs_struct
+        fpxregs: user_fpxregs_struct_x86 = info.fpxregs_struct
 
+        old_regs: user_regs_struct_x86 = info.old_regs_struct
+        old_fpregs: user_fpregs_struct_x86 = info.old_fpregs_struct
+        old_fpxregs: user_fpxregs_struct_x86 = info.old_fpxregs_struct
+
+        print(f"Registers:")
+        print(f"  eax: {hex(regs.eax)}")
+        print(f"  ebx: {hex(regs.ebx)}")
+        print(f"  ecx: {hex(regs.ecx)}")
+        print(f"  edx: {hex(regs.edx)}")
+        print(f"  esi: {hex(regs.esi)}")
+        print(f"  edi: {hex(regs.edi)}")
+        print(f"  ebp: {hex(regs.ebp)}")
+        print(f"  esp: {hex(regs.esp)}")
+        print(f"  eip: {hex(regs.eip)}")
+        print(f"  eflags: {hex(regs.eflags)}")
+        print(f"  cs: {hex(regs.cs)}")
+        print(f"  ds: {hex(regs.ds)}")
+        print(f"  es: {hex(regs.es)}")
+        print(f"  fs: {hex(regs.fs)}")
+        print(f"  gs: {hex(regs.gs)}")
+        print(f"  ss: {hex(regs.ss)}")
+        print(f"  orig_eax: {hex(regs.orig_eax)}")
+
+    
+    def interact(self):
+        child_pid = self.__trace_child()
+
+        info = proc_info_t()
+        self.ptrace.init_proc_info(info)
+
+        self.ptrace.launch(child_pid)
+        self.ptrace.cont(child_pid, info)
+        self.ptrace.reap(child_pid, info)
+
+        self.display_info(info)
+        
 # endregion
 
 # region START RAPPEL
