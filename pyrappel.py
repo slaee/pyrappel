@@ -1,4 +1,4 @@
-# Create a binary data
+# region BINARY CREATION
 from ctypes import c_uint32, c_uint8, c_uint16, c_int16, c_int32, c_uint64, c_int64, c_size_t
 from ctypes import Structure
 from ctypes import create_string_buffer, cast, POINTER, sizeof, memset, memmove, addressof
@@ -136,14 +136,6 @@ class ELF:
         self.code_size = code_size
 
     def gen_elf(self):
-        if self.arch == 32:
-            return self.__gen_elf32()
-        elif self.arch == 64:
-            return self.__gen_elf64()
-        else:
-            raise ValueError('Unknown architecture')
-        
-    def __gen_elf32(self):
         """
         We give the elf header and phdr an entire page, because the elf loader can
         only map the file at PAGE_SIZE offsets. So our file will look like this 
@@ -168,6 +160,14 @@ class ELF:
         
         TODO add data section, section headers
         """
+        if self.arch == 32:
+            return self.__gen_elf32()
+        elif self.arch == 64:
+            return self.__gen_elf64()
+        else:
+            raise ValueError('Unknown architecture')
+        
+    def __gen_elf32(self):
         pg_align_dist: c_size_t = self.start - (self.start & ~0xffff)
         pad_size: c_size_t = ((self.code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)) - self.code_size
         size: c_size_t = PAGE_SIZE + pg_align_dist + self.code_size + pad_size
@@ -186,7 +186,7 @@ class ELF:
         ehdr.e_ident[5] = ELFDATA2LSB
         ehdr.e_ident[6] = EV_CURRENT
         ehdr.e_ident[7] = ELFOSABI_NONE
-        ehdr.e_ident[9] = 0
+        ehdr.e_ident[8:16] = [0] * 8
         # Padding
         ehdr.e_type = ET_EXEC
         ehdr.e_machine = EM_386
@@ -223,13 +223,57 @@ class ELF:
         return size
 
     def __gen_elf64(self):
-        pass
+        pg_align_dist: c_size_t = self.start - (self.start & ~0xffff)
+        pad_size: c_size_t = ((self.code_size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1)) - self.code_size
+        size: c_size_t = PAGE_SIZE + pg_align_dist + self.code_size + pad_size
 
-if __name__ == '__main__':
-    elf = ELF(32)
-    elf.out = 'bin/test.elf'
-    elf.start = 0x400000
-    elf.code = b'\x89\xE3'
-    elf.code_size = len(elf.code)
-    elf.gen_elf()
-    print('Done')
+        e = create_string_buffer(size)
+        memset(e, TRAP, size)
+
+        # e: c_uint8 = create_string_buffer(size)
+        ehdr: Elf64_Ehdr = cast(e, POINTER(Elf64_Ehdr)).contents
+
+        ehdr.e_ident[0] = ELFMAG0
+        ehdr.e_ident[1] = ELFMAG1
+        ehdr.e_ident[2] = ELFMAG2
+        ehdr.e_ident[3] = ELFMAG3
+        ehdr.e_ident[4] = ELFCLASS64
+        ehdr.e_ident[5] = ELFDATA2LSB
+        ehdr.e_ident[6] = EV_CURRENT
+        ehdr.e_ident[7] = ELFOSABI_NONE
+        # Padding
+        ehdr.e_ident[8:16] = [0] * 8
+        ehdr.e_type = ET_EXEC
+        ehdr.e_machine = EM_X86_64
+        ehdr.e_version = EV_CURRENT
+        ehdr.e_entry = self.start
+        ehdr.e_phoff = sizeof(Elf64_Ehdr)
+        ehdr.e_shoff = 0
+        ehdr.e_flags = 0
+        ehdr.e_ehsize = sizeof(Elf32_Ehdr)
+        ehdr.e_phentsize = sizeof(Elf64_Phdr)
+        ehdr.e_phnum = 1
+        ehdr.e_shentsize = 0
+        ehdr.e_shnum = 0
+        ehdr.e_shstrndx = 0
+        
+        phdr_addess = addressof(e) + sizeof(Elf64_Ehdr)
+        phdr: Elf32_Phdr = cast(phdr_addess, POINTER(Elf64_Phdr)).contents
+        phdr.p_type = PT_LOAD
+        phdr.p_flags = PF_X | PF_R
+        phdr.p_offset = PAGE_SIZE
+        phdr.p_vaddr = self.start - pg_align_dist
+        phdr.p_paddr = 0
+        phdr.p_filesz = self.code_size + pg_align_dist
+        phdr.p_memsz = self.code_size + pg_align_dist
+        phdr.p_align = 0x4
+
+        # Copy code into the ELF file at the appropriate offset
+        data: c_uint8 = cast(e[phdr.p_offset:], POINTER(c_uint8))
+        memmove(data, self.code, self.code_size)
+
+        with open(self.out, 'wb') as f:
+            f.write(e.raw)
+        f.close()
+        return size
+# endregion
