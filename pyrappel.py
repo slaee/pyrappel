@@ -1,6 +1,19 @@
-# region BINARY CREATION
+# region RAPPEL SETTINGS
+import os
+user_path = os.getenv('HOME')
+settings = {
+    'path': f'{user_path}/.rappel/exe',
+    'start_addr': 0x400000,
+    'arch': 'x86',
+}
+# endregion
+
+
+
+
+# region BINARY GENERATION
 from ctypes import c_uint32, c_uint8, c_uint16, c_int16, c_int32, c_uint64, c_int64, c_size_t
-from ctypes import Structure
+from ctypes import Structure, Array
 from ctypes import create_string_buffer, cast, POINTER, sizeof, memset, memmove, addressof
 
 # Page size of the system
@@ -217,9 +230,7 @@ class ELF:
         data: c_uint8 = cast(e[phdr.p_offset:], POINTER(c_uint8))
         memmove(data, self.code, self.code_size)
 
-        with open(self.out, 'wb') as f:
-            f.write(e.raw)
-            f.flush()
+        self.out = data
         return size
 
     def __gen_elf64(self):
@@ -272,8 +283,149 @@ class ELF:
         data: c_uint8 = cast(e[phdr.p_offset:], POINTER(c_uint8))
         memmove(data, self.code, self.code_size)
 
-        with open(self.out, 'wb') as f:
-            f.write(e.raw)
-        f.close()
+        self.out = data
         return size
+# endregion
+
+
+
+
+# region RAPPEL KEYSTONE
+import keystone
+
+class RappelKeystone:
+    def __init__(self, arch, mode):
+        self.arch = arch
+        self.mode = mode
+        self.ks = None
+
+        if arch == 'x86':
+            if mode == '32':
+                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_32)
+            elif mode == '64':
+                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64)
+            else:
+                raise ValueError('Unknown mode')
+        else:
+            raise ValueError('Unknown architecture')
+        
+    def assemble(self, code: str) -> bytes:
+        """Assemble the given code into machine code."""
+        try:
+            encoding, count = self.ks.asm(code)
+            print(f"[+] Assembled {count} instructions.")
+            return bytes(encoding)
+        except keystone.KsError as e:
+            print(f"[-] Keystone error: {e}")
+            raise
+# endregion
+
+
+
+
+# region RAPPEL PTRACE
+from ptrace.debugger import PtraceDebugger, PtraceProcess
+from ptrace.syscall import SYSCALL_NAMES
+import ctypes
+import signal
+import struct
+
+class Ptrace:
+    def __init__(self):
+        self.pid = None
+
+# endregion
+
+
+
+
+# region RAPPEL EXE WRITER
+import stat
+import tempfile
+
+class RappelExe:
+    @staticmethod
+    def write(data, path=None):
+        if path is not None:
+            return RappelExe.__write_file(data, path)
+        else:
+            return RappelExe.__write_tmp_file(data)
+        
+    @staticmethod
+    def __write_file(data, path):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_WRONLY | stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+            if fd >= 0:
+                os.write(fd, data)
+                return RappelExe.__reopen_ro(fd, path)
+            else:
+                raise OSError(f"Failed to open {path} for writing: {os.strerror(ctypes.get_errno())}")          
+        except Exception as e:
+            print(f"[-] Error writing to {path}: {e}")
+
+    @staticmethod
+    def __write_tmp_file(data):
+        try:
+            fd, path = tempfile.mkstemp(prefix='rappel-exe.', dir=settings.get('path'))
+            if fd >= 0:
+                os.write(fd, data)
+                os.fchmod(fd, stat.S_IXUSR | stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+                return RappelExe.__reopen_ro(fd, path)
+            else:
+                raise OSError(f"Failed to open temporary file for writing: {os.strerror(ctypes.get_errno())}")
+        except Exception as e:
+            print(f"[-] Error writing to temporary file: {e}")
+
+    @staticmethod
+    def __reopen_ro(fd, path):
+        try:
+            os.close(fd)
+            ro_fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+
+            if ro_fd < 0:
+                raise OSError(f"Failed to reopen {path} read-only: {os.strerror(ctypes.get_errno())}")
+            
+            return ro_fd
+        except Exception as e:
+            print(f"[-] Error reopening {path} read-only: {e}")
+# endregion
+
+
+
+# region RAPPEL UI
+class Rappel:
+    def __init__(self, arch=64):
+        self.arch = arch
+        self.ptrace = Ptrace()
+
+        buffer: Array = create_string_buffer(PAGE_SIZE)
+        memset(buffer, TRAP, PAGE_SIZE)
+
+        if arch == 32:
+            # Create an ELF object
+            elf = ELF(32)
+            elf.code = buffer
+            elf.code_size = PAGE_SIZE
+            # Generate the ELF file
+            self.exe_fd = RappelExe.write(elf.out)
+            self.keystone = RappelKeystone('x86', '32')
+        elif arch == 64:
+            self.keystone = RappelKeystone('x86', '64')
+        else:
+            raise ValueError('Unknown architecture')
+        
+    def interact(self):
+        pass
+
+# endregion
+
+# region START RAPPEL
+def main():
+    rappel = Rappel(32)
+    rappel.interact()
+
+if __name__ == '__main__':
+    main()
 # endregion
