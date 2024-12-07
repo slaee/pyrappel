@@ -1,8 +1,12 @@
+#!.venv/bin/python3.12
+
 # region RAPPEL SETTINGS
 import os
 user_path = os.getenv('HOME')
+
 settings = {
-    'path': f'{user_path}/.rappel/exe',
+    # 'path': f'{user_path}/.rappel/exe',
+    'path': 'bin',
     'start_addr': 0x400000,
     'arch': 'x86',
 }
@@ -230,7 +234,7 @@ class ELF:
         data: c_uint8 = cast(e[phdr.p_offset:], POINTER(c_uint8))
         memmove(data, self.code, self.code_size)
 
-        self.out = data
+        self.out = e.raw
         return size
 
     def __gen_elf64(self):
@@ -283,57 +287,8 @@ class ELF:
         data: c_uint8 = cast(e[phdr.p_offset:], POINTER(c_uint8))
         memmove(data, self.code, self.code_size)
 
-        self.out = data
+        self.out = e.raw
         return size
-# endregion
-
-
-
-
-# region RAPPEL KEYSTONE
-import keystone
-
-class RappelKeystone:
-    def __init__(self, arch, mode):
-        self.arch = arch
-        self.mode = mode
-        self.ks = None
-
-        if arch == 'x86':
-            if mode == '32':
-                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_32)
-            elif mode == '64':
-                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64)
-            else:
-                raise ValueError('Unknown mode')
-        else:
-            raise ValueError('Unknown architecture')
-        
-    def assemble(self, code: str) -> bytes:
-        """Assemble the given code into machine code."""
-        try:
-            encoding, count = self.ks.asm(code)
-            print(f"[+] Assembled {count} instructions.")
-            return bytes(encoding)
-        except keystone.KsError as e:
-            print(f"[-] Keystone error: {e}")
-            raise
-# endregion
-
-
-
-
-# region RAPPEL PTRACE
-from ptrace.debugger import PtraceDebugger, PtraceProcess
-from ptrace.syscall import SYSCALL_NAMES
-import ctypes
-import signal
-import struct
-
-class Ptrace:
-    def __init__(self):
-        self.pid = None
-
 # endregion
 
 
@@ -394,11 +349,70 @@ class RappelExe:
 
 
 
+
+# region RAPPEL KEYSTONE
+import keystone
+
+class RappelKeystone:
+    def __init__(self, arch, mode):
+        self.arch = arch
+        self.mode = mode
+        self.ks = None
+
+        if arch == 'x86':
+            if mode == '32':
+                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_32)
+            elif mode == '64':
+                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64)
+            else:
+                raise ValueError('Unknown mode')
+        else:
+            raise ValueError('Unknown architecture')
+        
+    def assemble(self, code: str) -> bytes:
+        """Assemble the given code into machine code."""
+        try:
+            encoding, count = self.ks.asm(code)
+            print(f"[+] Assembled {count} instructions.")
+            return bytes(encoding)
+        except keystone.KsError as e:
+            print(f"[-] Keystone error: {e}")
+            raise
+# endregion
+
+
+
+
+# region RAPPEL PTRACE
+import sys
+import ctypes
+import ctypes.util
+
+PTRACE_TRACEME = 0
+
+# We need to use the libc library to call ptrace instead of using the ptrace module
+libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+
+class Ptrace:
+    def __init__(self):
+        pass
+
+    def child(self, exe_fd):
+        try:
+            libc.ptrace(PTRACE_TRACEME, 0, 0, 0)
+            argv = [f'/proc/self/fd/{exe_fd}']
+            os.execve(exe_fd, argv, {})
+        except Exception as e:
+            print(f"[-] Error starting process: {e}")
+            sys.exit(1)
+# endregion
+
+
 # region RAPPEL UI
 class Rappel:
     def __init__(self, arch=64):
         self.arch = arch
-        self.ptrace = Ptrace()
+        self.ptrace = None
 
         buffer: Array = create_string_buffer(PAGE_SIZE)
         memset(buffer, TRAP, PAGE_SIZE)
@@ -406,17 +420,42 @@ class Rappel:
         if arch == 32:
             # Create an ELF object
             elf = ELF(32)
+            elf.start = settings.get('start_addr')
             elf.code = buffer
             elf.code_size = PAGE_SIZE
+            elf.gen_elf()
             # Generate the ELF file
             self.exe_fd = RappelExe.write(elf.out)
+            del elf
             self.keystone = RappelKeystone('x86', '32')
         elif arch == 64:
+            elf = ELF(64)
+            elf.start = settings.get('start_addr')
+            elf.code = buffer
+            elf.code_size = PAGE_SIZE
+            elf.gen_elf()
+            # Generate the ELF file
+            self.exe_fd = RappelExe.write(elf.out)
+            del elf
             self.keystone = RappelKeystone('x86', '64')
         else:
             raise ValueError('Unknown architecture')
         
+    def __trace_child(self):
+        try:
+            trace_pid = os.fork()
+            if trace_pid == 0:
+                self.ptrace = Ptrace()
+                self.ptrace.child(self.exe_fd)
+            elif trace_pid < 0:
+                raise OSError(f"Failed to fork: {os.strerror(ctypes.get_errno())}")
+            return trace_pid
+        except Exception as e:
+            print(f"[-] Error forking: {e}")
+            return None
+        
     def interact(self):
+        tracee = self.__trace_child()
         pass
 
 # endregion
@@ -428,4 +467,6 @@ def main():
 
 if __name__ == '__main__':
     main()
+    # Delete rapel-exe.* files settings path
+    os.system(f'rm -rf {settings.get("path")}/rappel-exe.*')
 # endregion
