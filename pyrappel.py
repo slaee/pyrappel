@@ -411,6 +411,19 @@ def dump_reg64(x_name, y, z):
     else:
         print(f"{RED}{REGFMT64.format(y_value)}{RST}", end="")
 
+def dump_reg64_arr(x_name, index, y, z):
+    """
+    Mimics DUMPREG64 macro functionality.
+    Prints the value of the register in red if it differs from z.x, otherwise normal formatting.
+    """
+    y_value = getattr(y, x_name)
+    z_value = getattr(z, x_name)
+    
+    if y_value[index] == z_value[index]:
+        print(REGFMT64.format(y_value[index]), end="")
+    else:
+        print(f"{RED}{REGFMT64.format(y_value[index])}{RST}", end="")
+
 def print_reg64(header, x_name, y, z, trailer):
     """
     Mimics PRINTREG64 macro functionality.
@@ -778,7 +791,104 @@ def reg_info_x86(info: proc_info_t_32):
         print("[+] Exited with: ", info.exit_code)
 
 def reg_info_x64(info: proc_info_t_64):
-    pass
+    regs: user_regs_struct_x64 = info.regs_struct
+    old_regs: user_regs_struct_x64 = info.old_regs_struct
+
+    fpregs: user_fpregs_struct_x64 = info.fpregs_struct
+    old_fpregs: user_fpregs_struct_x64 = info.old_fpregs_struct
+
+    print_reg64("rax=", "rax", regs, old_regs, " ")
+    print_reg64("rbx=", "rbx", regs, old_regs, " ")
+    print_reg64("rcx=", "rcx", regs, old_regs, "\n")
+
+    print_reg64("rdx=", "rdx", regs, old_regs, " ")
+    print_reg64("rsi=", "rsi", regs, old_regs, " ")
+    print_reg64("rdi=", "rdi", regs, old_regs, "\n")
+
+    print_reg64("rip=", "rip", regs, old_regs, " ")
+    print_reg64("rsp=", "rsp", regs, old_regs, " ")
+    print_reg64("rbp=", "rbp", regs, old_regs, "\n")
+
+    print_reg64(" r8=", "r8", regs, old_regs, " ")
+    print_reg64(" r9=", "r9", regs, old_regs, " ")
+    print_reg64("r10=", "r10", regs, old_regs, "\n")
+
+    print_reg64("r11=", "r11", regs, old_regs, " ")
+    print_reg64("r12=", "r12", regs, old_regs, " ")
+    print_reg64("r13=", "r13", regs, old_regs, "\n")
+
+    print_reg64("r14=", "r14", regs, old_regs, " ")
+    print_reg64("r15=", "r15", regs, old_regs, "\n")
+
+    of: c_uint8 = (regs.rflags & 0x800) >> 11
+    old_of: c_uint8 = (old_regs.rflags & 0x800) >> 11
+
+    df: c_uint8 = (regs.rflags & 0x400) >> 10
+    old_df: c_uint8 = (old_regs.rflags & 0x400) >> 10
+
+    sf: c_uint8 = (regs.rflags & 0x80) >> 7
+    old_sf: c_uint8 = (old_regs.rflags & 0x80) >> 7
+
+    zf: c_uint8 = (regs.rflags & 0x40) >> 6
+    old_zf: c_uint8 = (old_regs.rflags & 0x40) >> 6
+
+    af: c_uint8 = (regs.rflags & 0x10) >> 4
+    old_af: c_uint8 = (old_regs.rflags & 0x10) >> 4
+
+    pf: c_uint8 = (regs.rflags & 0x4) >> 2
+    old_pf: c_uint8 = (old_regs.rflags & 0x4) >> 2
+
+    cf: c_uint8 = (regs.rflags & 0x1)
+    old_cf: c_uint8 = (old_regs.rflags & 0x1)
+
+    print_bit("[cf:", cf, old_cf, ", ")
+    print_bit("zf:", zf, old_zf, ", ")
+    print_bit("of:", of, old_of, ", ")
+    print_bit("sf:", sf, old_sf, ", ")
+    print_bit("pf:", pf, old_pf, ", ")
+    print_bit("af:", af, old_af, ", ")
+    print_bit("df:", df, old_df, "]\n")
+
+    print_reg16("cs=", "cs", regs, old_regs, " ")
+    print_reg16("ss=", "ss", regs, old_regs, " ")
+    print_reg16("ds=", "ds", regs, old_regs, " ")
+
+    print_reg16("es=", "es", regs, old_regs, " ")
+    print_reg16("fs=", "fs", regs, old_regs, " ")
+    print_reg16("gs=", "gs", regs, old_regs, "          ")
+    print_reg64("efl=", "rflags", regs, old_regs, "\n")
+
+    if settings.get('all_regs') == True:
+        print("FP Regs:", end="\n")
+        print_reg64("rip=", "rip", fpregs, old_fpregs, "\t")
+        print_reg64("rdp=", "rdp", fpregs, old_fpregs, "\t")
+        print_reg32("mxcsr=", "mxcsr", fpregs, old_fpregs, "\t")
+        print_reg32("mxcr_mask=", "mxcr_mask", fpregs, old_fpregs, "\n")
+
+        print_reg16("cwd=", "cwd", fpregs, old_fpregs, "\t")
+        print_reg16("swd=", "swd", fpregs, old_fpregs, "\t")
+        print_reg16("ftw=", "ftw", fpregs, old_fpregs, "\t")
+        print_reg16("fop=", "fop", fpregs, old_fpregs, "\n")
+
+        print("st_space:", end="\n")
+        for i in range(32 // 4):
+            print(f"0x{i * 0x10:02x}:\t", end="")
+            for j in range(i * 4, i * 4 + 4):
+                dump_reg64_arr("st_space", j, fpregs, old_fpregs)
+                print("\t", end="")
+            print()
+
+        print("xmm_space:", end="\n")
+        for i in range(64 // 4):
+            print(f"0x{i * 0x10:02x}:\t", end="")
+            for j in range(i * 4, i * 4 + 4):
+                dump_reg64_arr("xmm_space", j, fpregs, old_fpregs)
+                print("\t", end="")
+            print()
+
+    if info.sig != 5 and info.sig != -1:
+        print("[+] Process died with signal ", info.sig)
+        print("[+] Exited with: ", info.exit_code)
 # endregion
 
 
@@ -872,8 +982,9 @@ class Ptrace:
         info.fpregs.iov_base = ctypes.addressof(info.fpregs_struct)
         info.fpregs.iov_len = sizeof(info.fpregs_struct)
 
-        info.fpxregs.iov_base = ctypes.addressof(info.fpxregs_struct)
-        info.fpxregs.iov_len = sizeof(info.fpxregs_struct)
+        if isinstance(info, proc_info_t_32):
+            info.fpxregs.iov_base = ctypes.addressof(info.fpxregs_struct)
+            info.fpxregs.iov_len = sizeof(info.fpxregs_struct)
 
     def __exited_collect_regs(self, pid, info: proc_info_t):
         self.__ptrace_collect_regs(pid, info)
@@ -894,8 +1005,9 @@ class Ptrace:
         info.old_fpregs_struct = info.fpregs_struct
         libc.ptrace(PTRACE_GETREGSET, pid, NT_PRFPREG, ctypes.byref(info.fpregs))
         
-        info.old_fpxregs_struct = info.fpxregs_struct
-        libc.ptrace(PTRACE_GETREGSET, pid, NT_PRXFPREG, ctypes.byref(info.fpxregs))
+        if isinstance(info, proc_info_t_32):
+            info.old_fpxregs_struct = info.fpxregs_struct
+            libc.ptrace(PTRACE_GETREGSET, pid, NT_PRXFPREG, ctypes.byref(info.fpxregs))
 
         info.sig = -1
         info.exit_code = -1
@@ -985,7 +1097,7 @@ class Rappel:
 
 # region START RAPPEL
 def main():
-    rappel = Rappel(32)
+    rappel = Rappel(64)
     rappel.interact()
 
 if __name__ == '__main__':
