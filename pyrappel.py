@@ -15,11 +15,21 @@ settings = {
 
 
 
-# region BINARY GENERATION
-from ctypes import c_uint32, c_uint8, c_uint16, c_int16, c_int32, c_uint64, c_int64, c_size_t
-from ctypes import Structure, Array
-from ctypes import create_string_buffer, cast, POINTER, sizeof, memset, memmove, addressof
+# region IMPORTS
+import sys
+import ctypes.util
+import signal
+import stat
+import tempfile
+import keystone
 
+from ctypes import *
+# endregion
+
+
+
+
+# region BINARY GENERATION
 # Page size of the system
 PAGE_SIZE   = 1 << 12
 
@@ -295,9 +305,6 @@ class ELF:
 
 
 # region RAPPEL EXE WRITER
-import stat
-import tempfile
-
 class RappelExe:
     @staticmethod
     def write(data, path=None):
@@ -351,8 +358,6 @@ class RappelExe:
 
 
 # region RAPPEL KEYSTONE
-import keystone
-
 class RappelKeystone:
     def __init__(self, arch, mode):
         self.arch = arch
@@ -383,13 +388,38 @@ class RappelKeystone:
 
 
 
-# region PRINT FUNCTIONS
-REGFMT16 = "{:04x}"  # Format string for 16-bit hexadecimal values
-REGFMT32 = "{:08x}"  # Equivalent to "%08x" in C
+# region UTIL FUNCTIONS
+REGFMT64 = "{:016x}"  # Equivalent to "%016x" in C (64-bit)
+REGFMT32 = "{:08x}"   # Equivalent to "%08x" in C (32-bit)
+REGFMT16 = "{:04x}"   # Equivalent to "%04x" in C (16-bit)
+REGFMT8  = "{:02x}"   # Equivalent to "%02x" in C (8-bit)
+
 RED = "\033[31m"     # ANSI escape code for red text
 RST = "\033[0m"      # ANSI reset code
 
-def dumpreg32(x_name, y, z):
+def dump_reg64(x_name, y, z):
+    """
+    Mimics DUMPREG64 macro functionality.
+    Prints the value of the register in red if it differs from z.x, otherwise normal formatting.
+    """
+    y_value = getattr(y, x_name)
+    z_value = getattr(z, x_name)
+    
+    if y_value == z_value:
+        print(REGFMT64.format(y_value), end="")
+    else:
+        print(f"{RED}{REGFMT64.format(y_value)}{RST}", end="")
+
+def print_reg64(header, x_name, y, z, trailer):
+    """
+    Mimics PRINTREG64 macro functionality.
+    Prints a header, followed by the register value, and a trailer.
+    """
+    print(header, end="")
+    dump_reg64(x_name, y, z)
+    print(trailer, end="")
+
+def dump_reg32(x_name, y, z):
     """
     Mimics DUMPREG32 macro functionality.
     Prints the value of the register in red if it differs from z.x, otherwise normal formatting.
@@ -402,81 +432,75 @@ def dumpreg32(x_name, y, z):
     else:
         print(f"{RED}{REGFMT32.format(y_value)}{RST}", end="")
 
-def printreg32(header, x_name, y, z, trailer):
+def print_reg32(header, x_name, y, z, trailer):
     """
     Mimics PRINTREG32 macro functionality.
     Prints a header, followed by the register value, and a trailer.
     """
     print(header, end="")
-    dumpreg32(x_name, y, z)
+    dump_reg32(x_name, y, z)
     print(trailer, end="")
 
-def dumpreg16(field_name, reg_obj, ref_obj):
+def dump_reg16(x_name, y, z):
     """
-    Mimics the DUMPREG16 macro functionality.
-    Prints the value of a 16-bit register (field_name) from reg_obj.
-    Highlights in red if the value differs from the reference (ref_obj).
+    Mimics DUMPREG16 macro functionality.
+    Prints the value of the register in red if it differs from z.x, otherwise normal formatting.
     """
-    reg_value = getattr(reg_obj, field_name)
-    ref_value = getattr(ref_obj, field_name)
-
-    if reg_value == ref_value:
-        print(REGFMT16.format(reg_value), end="")
+    y_value = getattr(y, x_name)
+    z_value = getattr(z, x_name)
+    
+    if y_value == z_value:
+        print(REGFMT16.format(y_value), end="")
     else:
-        print(f"{RED}{REGFMT16.format(reg_value)}{RST}", end="")
+        print(f"{RED}{REGFMT16.format(y_value)}{RST}", end="")
 
-def printreg16(header, field_name, reg_obj, ref_obj, trailer):
+def print_reg16(header, x_name, y, z, trailer):
     """
-    Mimics the PRINTREG16 macro functionality.
-    Prints a header, the 16-bit register value, and a trailer.
+    Mimics PRINTREG16 macro functionality.
+    Prints a header, followed by the register value, and a trailer.
     """
     print(header, end="")
-    dumpreg16(field_name, reg_obj, ref_obj)
+    dump_reg16(x_name, y, z)
     print(trailer, end="")
 
-def printbit(name, y, z, trailer):
+def dump_reg8(x_name, y, z):
     """
-    Mimics the PRINTBIT macro functionality.
-    Prints the value of a bit (y) along with a name.
-    Highlights in red if the bit differs from z.
+    Mimics DUMPREG8 macro functionality.
+    Prints the value of the register in red if it differs from z.x, otherwise normal formatting.
+    """
+    y_value = getattr(y, x_name)
+    z_value = getattr(z, x_name)
+    
+    if y_value == z_value:
+        print(REGFMT8.format(y_value), end="")
+    else:
+        print(f"{RED}{REGFMT8.format(y_value)}{RST}", end="")
+
+def print_reg8(header, x_name, y, z, trailer):
+    """
+    Mimics PRINTREG8 macro functionality.
+    Prints a header, followed by the register value, and a trailer.
+    """
+    print(header, end="")
+    dump_reg8(x_name, y, z)
+    print(trailer, end="")
+
+def print_bit(name, y, z, trailer):
+    """
+    Mimics PRINTBIT macro functionality.
+    Prints the value of the bit in red if it differs from z, otherwise normal formatting.
     """
     if y == z:
         print(f"{name}{y}", end="")
     else:
         print(f"{RED}{name}{y}{RST}", end="")
-    
     print(trailer, end="")
-
 # endregion
 
 
-# region RAPPEL PTRACE
-import sys
-import ctypes
-import ctypes.util
-import signal
 
-from ctypes import c_long, c_ushort, c_int, c_char_p
 
-# We need to use the libc library to call ptrace instead of using the ptrace module
-libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
-
-# ptrace(2) constants from sys/ptrace.h
-PTRACE_TRACEME = 0
-PTRACE_PEEKDATA = 2
-PTRACE_EVENT_EXIT = 6
-PTRACE_CONT = 7
-PTRACE_DETACH = 17
-PTRACE_O_TRACEEXIT = 64
-PTRACE_SETOPTIONS = 0x4200
-PTRACE_GETEVENTMSG = 0x4201
-PTRACE_GETSIGINFO = 0x4202
-PTRACE_GETREGSET = 0x4204
-
-NT_PRSTATUS = 1
-NT_PRFPREG = 2
-NT_PRXFPREG = 0x46e62b7f
-
+# region ARCH STRUCTURES
 class user_fpregs_struct_x86(Structure):
     _fields_ = [
         ('cwd', c_int32),
@@ -529,8 +553,8 @@ class user_regs_struct_x86(Structure):
 
 class IOVec(Structure):
     _fields_ = [
-        ("iov_base", ctypes.c_void_p),  # Pointer to the data
-        ("iov_len", ctypes.c_size_t),  # Length of the data
+        ("iov_base", c_void_p),  # Pointer to the data
+        ("iov_len", c_size_t),  # Length of the data
     ]
 
 class proc_info_t(Structure):
@@ -551,6 +575,31 @@ class proc_info_t(Structure):
         ('sig', c_int),
         ('exit_code', c_int),
     ]
+# endregion
+
+
+
+
+# region RAPPEL PTRACE
+
+# We need to use the libc library to call ptrace instead of using the ptrace module
+libc = CDLL(ctypes.util.find_library("c"), use_errno=True)
+
+# ptrace(2) constants from sys/ptrace.h
+PTRACE_TRACEME = 0
+PTRACE_PEEKDATA = 2
+PTRACE_EVENT_EXIT = 6
+PTRACE_CONT = 7
+PTRACE_DETACH = 17
+PTRACE_O_TRACEEXIT = 64
+PTRACE_SETOPTIONS = 0x4200
+PTRACE_GETEVENTMSG = 0x4201
+PTRACE_GETSIGINFO = 0x4202
+PTRACE_GETREGSET = 0x4204
+
+NT_PRSTATUS = 1
+NT_PRFPREG = 2
+NT_PRXFPREG = 0x46e62b7f
 
 class Ptrace:
     def child(self, exe_fd):
@@ -706,16 +755,16 @@ class Rappel:
         old_fpregs: user_fpregs_struct_x86 = info.old_fpregs_struct
         old_fpxregs: user_fpxregs_struct_x86 = info.old_fpxregs_struct
 
-        printreg32("eax=", "eax", regs, old_regs, " ")
-        printreg32("ebx=", "ebx", regs, old_regs, " ")
-        printreg32("ecx=", "ecx", regs, old_regs, " ")
-        printreg32("edx=", "edx", regs, old_regs, " ")
-        printreg32("esi=", "esi", regs, old_regs, " ")
-        printreg32("edi=", "edi", regs, old_regs, "\n")
+        print_reg32("eax=", "eax", regs, old_regs, " ")
+        print_reg32("ebx=", "ebx", regs, old_regs, " ")
+        print_reg32("ecx=", "ecx", regs, old_regs, " ")
+        print_reg32("edx=", "edx", regs, old_regs, " ")
+        print_reg32("esi=", "esi", regs, old_regs, " ")
+        print_reg32("edi=", "edi", regs, old_regs, "\n")
 
-        printreg32("eip=", "eip", regs, old_regs, " ")
-        printreg32("esp=", "esp", regs, old_regs, " ")
-        printreg32("ebp=", "ebp", regs, old_regs, " ")
+        print_reg32("eip=", "eip", regs, old_regs, " ")
+        print_reg32("esp=", "esp", regs, old_regs, " ")
+        print_reg32("ebp=", "ebp", regs, old_regs, " ")
 
         of: c_uint8 = (regs.eflags & 0x800) >> 11
         old_of: c_uint8 = (old_regs.eflags & 0x800) >> 11
@@ -738,22 +787,22 @@ class Rappel:
         cf: c_uint8 = (regs.eflags & 0x1)
         old_cf: c_uint8 = (old_regs.eflags & 0x1)
 
-        printbit("[cf:", cf, old_cf, ", ")
-        printbit("zf:", zf, old_zf, ", ")
-        printbit("of:", of, old_of, ", ")
-        printbit("sf:", sf, old_sf, ", ")
-        printbit("pf:", pf, old_pf, ", ")
-        printbit("af:", af, old_af, ", ")
-        printbit("df:", df, old_df, "]\n")
+        print_bit("[cf:", cf, old_cf, ", ")
+        print_bit("zf:", zf, old_zf, ", ")
+        print_bit("of:", of, old_of, ", ")
+        print_bit("sf:", sf, old_sf, ", ")
+        print_bit("pf:", pf, old_pf, ", ")
+        print_bit("af:", af, old_af, ", ")
+        print_bit("df:", df, old_df, "]\n")
 
-        printreg16("cs=", "xcs", regs, old_regs, " ")
-        printreg16("ss=", "xss", regs, old_regs, " ")
-        printreg16("ds=", "xds", regs, old_regs, " ")
-        printreg16("es=", "xes", regs, old_regs, " ")
-        printreg16("fs=", "xfs", regs, old_regs, " ")
-        printreg16("gs=", "xgs", regs, old_regs, "          ")
+        print_reg16("cs=", "xcs", regs, old_regs, " ")
+        print_reg16("ss=", "xss", regs, old_regs, " ")
+        print_reg16("ds=", "xds", regs, old_regs, " ")
+        print_reg16("es=", "xes", regs, old_regs, " ")
+        print_reg16("fs=", "xfs", regs, old_regs, " ")
+        print_reg16("gs=", "xgs", regs, old_regs, "          ")
 
-        printreg32("efl=", "eflags", regs, old_regs, " ")
+        print_reg32("efl=", "eflags", regs, old_regs, " ")
 
     
     def interact(self):
