@@ -9,6 +9,7 @@ settings = {
     'path': 'bin',
     'start_addr': 0x400000,
     'arch': 'x86',
+    'all_regs': True,
 }
 # endregion
 
@@ -394,8 +395,8 @@ REGFMT32 = "{:08x}"   # Equivalent to "%08x" in C (32-bit)
 REGFMT16 = "{:04x}"   # Equivalent to "%04x" in C (16-bit)
 REGFMT8  = "{:02x}"   # Equivalent to "%02x" in C (8-bit)
 
-RED = "\033[31m"     # ANSI escape code for red text
-RST = "\033[0m"      # ANSI reset code
+RED = "\x1b[0;31m"     # ANSI escape code for red text
+RST = "\x1b[0m"      # ANSI reset code
 
 def dump_reg64(x_name, y, z):
     """
@@ -431,6 +432,19 @@ def dump_reg32(x_name, y, z):
         print(REGFMT32.format(y_value), end="")
     else:
         print(f"{RED}{REGFMT32.format(y_value)}{RST}", end="")
+
+def dump_reg32_arr(x_name, index, y, z):
+    """
+    Mimics DUMPREG32 macro functionality.
+    Prints the value of the register in red if it differs from z.x, otherwise normal formatting.
+    """
+    y_value = getattr(y, x_name)
+    z_value = getattr(z, x_name)
+    
+    if y_value[index] == z_value[index]:
+        print(REGFMT32.format(y_value[index]), end="")
+    else:
+        print(f"{RED}{REGFMT32.format(y_value[index])}{RST}", end="")
 
 def print_reg32(header, x_name, y, z, trailer):
     """
@@ -503,14 +517,14 @@ def print_bit(name, y, z, trailer):
 # region ARCH STRUCTURES
 class user_fpregs_struct_x86(Structure):
     _fields_ = [
-        ('cwd', c_int32),
-        ('swd', c_int32),
-        ('twd', c_int32),
-        ('fip', c_int32),
-        ('fcs', c_int32),
-        ('foo', c_int32),
-        ('fos', c_int32),
-        ('st_space', c_int32 * 20),
+        ('cwd', c_uint32),
+        ('swd', c_uint32),
+        ('twd', c_uint32),
+        ('fip', c_uint32),
+        ('fcs', c_uint32),
+        ('foo', c_uint32),
+        ('fos', c_uint32),
+        ('st_space', c_uint32 * 20),
     ]
 
 class user_fpxregs_struct_x86(Structure):
@@ -625,7 +639,19 @@ class proc_info_t_32(Structure):
 
 
 class proc_info_t_64(Structure):
-    pass
+    _fields_ = [
+        ('pid', c_long),
+        ('regs_struct', user_regs_struct_x64),
+        ('old_regs_struct', user_regs_struct_x64),
+        ('regs', IOVec),
+
+        ('fpregs_struct', user_fpregs_struct_x64),
+        ('old_fpregs_struct', user_fpregs_struct_x64),
+        ('fpregs', IOVec),
+
+        ('sig', c_int),
+        ('exit_code', c_int),
+    ]
 
 
 class proc_info_t(Union):
@@ -695,8 +721,61 @@ def reg_info_x86(info: proc_info_t_32):
     print_reg16("fs=", "xfs", regs, old_regs, " ")
     print_reg16("gs=", "xgs", regs, old_regs, "          ")
 
-    print_reg32("efl=", "eflags", regs, old_regs, " ")
+    print_reg32("efl=", "eflags", regs, old_regs, "\n")
 
+    if settings.get('all_regs') == True:
+        print("FP Regs:", end="\n")
+        print_reg32("cwd=", "cwd", fpregs, old_fpregs, "\t")
+        print_reg32("swd=", "swd", fpregs, old_fpregs, "\t")
+        print_reg32("twd=", "twd", fpregs, old_fpregs, "\t")
+        print_reg32("fip=", "fip", fpregs, old_fpregs, "\n")
+
+        print_reg16("fcs=", "fcs", fpregs, old_fpregs, "\t")
+        print_reg32("foo=", "foo", fpregs, old_fpregs, "\t")
+        print_reg16("fos=", "fos", fpregs, old_fpregs, "\n")
+
+        print("st_space:", end="\n")
+        for i in range(20 // 4):
+            print(f"0x{i * 0x10:02x}:\t", end="")
+            for j in range(i * 4, i * 4 + 4):
+                dump_reg32_arr("st_space", j, fpregs, old_fpregs)
+                print("\t", end="")
+            print()  # Newline after each row
+
+        fpregs = None
+
+        print("FPX Regs:", end="\n")
+        print_reg32("cwd=", "cwd", fpxregs, old_fpxregs, "\t")
+        print_reg32("swd=", "swd", fpxregs, old_fpxregs, "\t")
+        print_reg32("twd=", "twd", fpxregs, old_fpxregs, "\t")
+        print_reg32("fop=", "fop", fpxregs, old_fpxregs, "\n")
+
+        print_reg32("fip=", "fip", fpxregs, old_fpxregs, "\t")
+        print_reg32("fcs=", "fcs", fpxregs, old_fpxregs, "\t")
+        print_reg32("foo=", "foo", fpxregs, old_fpxregs, "\t")
+        print_reg32("fos=", "fos", fpxregs, old_fpxregs, "\n")
+        
+        print_reg32("mxcsr=", "mxcsr", fpxregs, old_fpxregs, "\n")
+
+        print("st_space:", end="\n")
+        for i in range(32 // 4):
+            print(f"0x{i * 0x10:02x}:\t", end="")
+            for j in range(i * 4, i * 4 + 4):
+                dump_reg32_arr("st_space", j, fpxregs, old_fpxregs)
+                print("\t", end="")
+            print()
+
+        print("xmm_space:", end="\n")
+        for i in range(32 // 4):
+            print(f"0x{i * 0x10:02x}:\t", end="")
+            for j in range(i * 4, i * 4 + 4):
+                dump_reg32_arr("xmm_space", j, fpxregs, old_fpxregs)
+                print("\t", end="")
+            print()
+
+    if info.sig != 5 and info.sig != -1:
+        print("[+] Process died with signal ", info.sig)
+        print("[+] Exited with: ", info.exit_code)
 
 def reg_info_x64(info: proc_info_t_64):
     pass
