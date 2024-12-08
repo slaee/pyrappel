@@ -551,13 +551,60 @@ class user_regs_struct_x86(Structure):
         ('xss', c_int32)
     ]
 
+
+class user_fpregs_struct_x64(Structure):
+    _fields_ = [    
+        ('cwd', c_ushort),
+        ('swd', c_ushort),
+        ('ftw', c_ushort),
+        ('fop', c_ushort),
+        ('rip', c_ulong),
+        ('rdp', c_ulong),
+        ('mxcsr', c_uint32),
+        ('mxcr_mask', c_uint32),
+        ('st_space', c_uint32 * 32),
+        ('xmm_space', c_uint32 * 64),
+        ('padding', c_uint32 * 24),
+    ]
+
+class user_regs_struct_x64(Structure):
+    _fields_ = [
+        ('r15', c_uint64),
+        ('r14', c_uint64),
+        ('r13', c_uint64),
+        ('r12', c_uint64),
+        ('rbp', c_uint64),
+        ('rbx', c_uint64),
+        ('r11', c_uint64),
+        ('r10', c_uint64),
+        ('r9', c_uint64),
+        ('r8', c_uint64),
+        ('rax', c_uint64),
+        ('rcx', c_uint64),
+        ('rdx', c_uint64),
+        ('rsi', c_uint64),
+        ('rdi', c_uint64),
+        ('orig_rax', c_uint64),
+        ('rip', c_uint64),
+        ('cs', c_uint64),
+        ('rflags', c_uint64),
+        ('rsp', c_uint64),
+        ('ss', c_uint64),
+        ('fs_base', c_uint64),
+        ('gs_base', c_uint64),
+        ('ds', c_uint64),
+        ('es', c_uint64),
+        ('fs', c_uint64),
+        ('gs', c_uint64),
+    ]
+
 class IOVec(Structure):
     _fields_ = [
         ("iov_base", c_void_p),  # Pointer to the data
         ("iov_len", c_size_t),  # Length of the data
     ]
 
-class proc_info_t(Structure):
+class proc_info_t_32(Structure):
     _fields_ = [
         ('pid', c_long),
         ('regs_struct', user_regs_struct_x86),
@@ -575,6 +622,84 @@ class proc_info_t(Structure):
         ('sig', c_int),
         ('exit_code', c_int),
     ]
+
+
+class proc_info_t_64(Structure):
+    pass
+
+
+class proc_info_t(Union):
+    _fields_ = [
+        ('proc_info_t_32', proc_info_t_32),
+        ('proc_info_t_64', proc_info_t_64),
+    ]
+# endregion
+
+
+
+
+# region ARCH REG_INFO UTILS
+def reg_info_x86(info: proc_info_t_32):
+    regs: user_regs_struct_x86 = info.regs_struct
+    fpregs: user_fpregs_struct_x86 = info.fpregs_struct
+    fpxregs: user_fpxregs_struct_x86 = info.fpxregs_struct
+
+    old_regs: user_regs_struct_x86 = info.old_regs_struct
+    old_fpregs: user_fpregs_struct_x86 = info.old_fpregs_struct
+    old_fpxregs: user_fpxregs_struct_x86 = info.old_fpxregs_struct
+
+    print_reg32("eax=", "eax", regs, old_regs, " ")
+    print_reg32("ebx=", "ebx", regs, old_regs, " ")
+    print_reg32("ecx=", "ecx", regs, old_regs, " ")
+    print_reg32("edx=", "edx", regs, old_regs, " ")
+    print_reg32("esi=", "esi", regs, old_regs, " ")
+    print_reg32("edi=", "edi", regs, old_regs, "\n")
+
+    print_reg32("eip=", "eip", regs, old_regs, " ")
+    print_reg32("esp=", "esp", regs, old_regs, " ")
+    print_reg32("ebp=", "ebp", regs, old_regs, " ")
+
+    of: c_uint8 = (regs.eflags & 0x800) >> 11
+    old_of: c_uint8 = (old_regs.eflags & 0x800) >> 11
+
+    df: c_uint8 = (regs.eflags & 0x400) >> 10
+    old_df: c_uint8 = (old_regs.eflags & 0x400) >> 10
+
+    sf: c_uint8 = (regs.eflags & 0x80) >> 7
+    old_sf: c_uint8 = (old_regs.eflags & 0x80) >> 7
+
+    zf: c_uint8 = (regs.eflags & 0x40) >> 6
+    old_zf: c_uint8 = (old_regs.eflags & 0x40) >> 6
+
+    af: c_uint8 = (regs.eflags & 0x10) >> 4
+    old_af: c_uint8 = (old_regs.eflags & 0x10) >> 4
+
+    pf: c_uint8 = (regs.eflags & 0x4) >> 2
+    old_pf: c_uint8 = (old_regs.eflags & 0x4) >> 2
+
+    cf: c_uint8 = (regs.eflags & 0x1)
+    old_cf: c_uint8 = (old_regs.eflags & 0x1)
+
+    print_bit("[cf:", cf, old_cf, ", ")
+    print_bit("zf:", zf, old_zf, ", ")
+    print_bit("of:", of, old_of, ", ")
+    print_bit("sf:", sf, old_sf, ", ")
+    print_bit("pf:", pf, old_pf, ", ")
+    print_bit("af:", af, old_af, ", ")
+    print_bit("df:", df, old_df, "]\n")
+
+    print_reg16("cs=", "xcs", regs, old_regs, " ")
+    print_reg16("ss=", "xss", regs, old_regs, " ")
+    print_reg16("ds=", "xds", regs, old_regs, " ")
+    print_reg16("es=", "xes", regs, old_regs, " ")
+    print_reg16("fs=", "xfs", regs, old_regs, " ")
+    print_reg16("gs=", "xgs", regs, old_regs, "          ")
+
+    print_reg32("efl=", "eflags", regs, old_regs, " ")
+
+
+def reg_info_x64(info: proc_info_t_64):
+    pass
 # endregion
 
 
@@ -698,6 +823,8 @@ class Ptrace:
 # endregion
 
 
+
+
 # region RAPPEL UI
 class Rappel:
     def __init__(self, arch=64):
@@ -746,69 +873,16 @@ class Rappel:
             print(f"[-] Error forking: {e}")
             return None
         
-    def display_info(self, info: proc_info_t):
-        regs: user_regs_struct_x86 = info.regs_struct
-        fpregs: user_fpregs_struct_x86 = info.fpregs_struct
-        fpxregs: user_fpxregs_struct_x86 = info.fpxregs_struct
-
-        old_regs: user_regs_struct_x86 = info.old_regs_struct
-        old_fpregs: user_fpregs_struct_x86 = info.old_fpregs_struct
-        old_fpxregs: user_fpxregs_struct_x86 = info.old_fpxregs_struct
-
-        print_reg32("eax=", "eax", regs, old_regs, " ")
-        print_reg32("ebx=", "ebx", regs, old_regs, " ")
-        print_reg32("ecx=", "ecx", regs, old_regs, " ")
-        print_reg32("edx=", "edx", regs, old_regs, " ")
-        print_reg32("esi=", "esi", regs, old_regs, " ")
-        print_reg32("edi=", "edi", regs, old_regs, "\n")
-
-        print_reg32("eip=", "eip", regs, old_regs, " ")
-        print_reg32("esp=", "esp", regs, old_regs, " ")
-        print_reg32("ebp=", "ebp", regs, old_regs, " ")
-
-        of: c_uint8 = (regs.eflags & 0x800) >> 11
-        old_of: c_uint8 = (old_regs.eflags & 0x800) >> 11
-
-        df: c_uint8 = (regs.eflags & 0x400) >> 10
-        old_df: c_uint8 = (old_regs.eflags & 0x400) >> 10
-
-        sf: c_uint8 = (regs.eflags & 0x80) >> 7
-        old_sf: c_uint8 = (old_regs.eflags & 0x80) >> 7
-
-        zf: c_uint8 = (regs.eflags & 0x40) >> 6
-        old_zf: c_uint8 = (old_regs.eflags & 0x40) >> 6
-
-        af: c_uint8 = (regs.eflags & 0x10) >> 4
-        old_af: c_uint8 = (old_regs.eflags & 0x10) >> 4
-
-        pf: c_uint8 = (regs.eflags & 0x4) >> 2
-        old_pf: c_uint8 = (old_regs.eflags & 0x4) >> 2
-
-        cf: c_uint8 = (regs.eflags & 0x1)
-        old_cf: c_uint8 = (old_regs.eflags & 0x1)
-
-        print_bit("[cf:", cf, old_cf, ", ")
-        print_bit("zf:", zf, old_zf, ", ")
-        print_bit("of:", of, old_of, ", ")
-        print_bit("sf:", sf, old_sf, ", ")
-        print_bit("pf:", pf, old_pf, ", ")
-        print_bit("af:", af, old_af, ", ")
-        print_bit("df:", df, old_df, "]\n")
-
-        print_reg16("cs=", "xcs", regs, old_regs, " ")
-        print_reg16("ss=", "xss", regs, old_regs, " ")
-        print_reg16("ds=", "xds", regs, old_regs, " ")
-        print_reg16("es=", "xes", regs, old_regs, " ")
-        print_reg16("fs=", "xfs", regs, old_regs, " ")
-        print_reg16("gs=", "xgs", regs, old_regs, "          ")
-
-        print_reg32("efl=", "eflags", regs, old_regs, " ")
-
-    
+    def display_info(self, info):
+        if self.arch == 32:
+            reg_info_x86(info)
+        elif self.arch == 64:
+            reg_info_x64(info)
+        
     def interact(self):
         child_pid = self.__trace_child()
 
-        info = proc_info_t()
+        info = self.__proc_info(self.arch)
         self.ptrace.init_proc_info(info)
 
         self.ptrace.launch(child_pid)
@@ -816,8 +890,19 @@ class Rappel:
         self.ptrace.reap(child_pid, info)
 
         self.display_info(info)
+
+    def __proc_info(self, arch):
+        if arch == 32:
+            return proc_info_t_32()
+        elif arch == 64:
+            return proc_info_t_64()
+        else:
+            raise ValueError('Unknown architecture')
         
 # endregion
+
+
+
 
 # region START RAPPEL
 def main():
