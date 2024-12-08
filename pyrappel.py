@@ -383,6 +383,73 @@ class RappelKeystone:
 
 
 
+# region PRINT FUNCTIONS
+REGFMT16 = "{:04x}"  # Format string for 16-bit hexadecimal values
+REGFMT32 = "{:08x}"  # Equivalent to "%08x" in C
+RED = "\033[31m"     # ANSI escape code for red text
+RST = "\033[0m"      # ANSI reset code
+
+def dumpreg32(x_name, y, z):
+    """
+    Mimics DUMPREG32 macro functionality.
+    Prints the value of the register in red if it differs from z.x, otherwise normal formatting.
+    """
+    y_value = getattr(y, x_name)
+    z_value = getattr(z, x_name)
+    
+    if y_value == z_value:
+        print(REGFMT32.format(y_value), end="")
+    else:
+        print(f"{RED}{REGFMT32.format(y_value)}{RST}", end="")
+
+def printreg32(header, x_name, y, z, trailer):
+    """
+    Mimics PRINTREG32 macro functionality.
+    Prints a header, followed by the register value, and a trailer.
+    """
+    print(header, end="")
+    dumpreg32(x_name, y, z)
+    print(trailer, end="")
+
+def dumpreg16(field_name, reg_obj, ref_obj):
+    """
+    Mimics the DUMPREG16 macro functionality.
+    Prints the value of a 16-bit register (field_name) from reg_obj.
+    Highlights in red if the value differs from the reference (ref_obj).
+    """
+    reg_value = getattr(reg_obj, field_name)
+    ref_value = getattr(ref_obj, field_name)
+
+    if reg_value == ref_value:
+        print(REGFMT16.format(reg_value), end="")
+    else:
+        print(f"{RED}{REGFMT16.format(reg_value)}{RST}", end="")
+
+def printreg16(header, field_name, reg_obj, ref_obj, trailer):
+    """
+    Mimics the PRINTREG16 macro functionality.
+    Prints a header, the 16-bit register value, and a trailer.
+    """
+    print(header, end="")
+    dumpreg16(field_name, reg_obj, ref_obj)
+    print(trailer, end="")
+
+def printbit(name, y, z, trailer):
+    """
+    Mimics the PRINTBIT macro functionality.
+    Prints the value of a bit (y) along with a name.
+    Highlights in red if the bit differs from z.
+    """
+    if y == z:
+        print(f"{name}{y}", end="")
+    else:
+        print(f"{RED}{name}{y}{RST}", end="")
+    
+    print(trailer, end="")
+
+# endregion
+
+
 # region RAPPEL PTRACE
 import sys
 import ctypes
@@ -412,14 +479,14 @@ NT_PRXFPREG = 0x46e62b7f
 
 class user_fpregs_struct_x86(Structure):
     _fields_ = [
-        ('cwd', c_long),
-        ('swd', c_long),
-        ('twd', c_long),
-        ('fip', c_long),
-        ('fcs', c_long),
-        ('foo', c_long),
-        ('fos', c_long),
-        ('st_space', c_long * 20),
+        ('cwd', c_int32),
+        ('swd', c_int32),
+        ('twd', c_int32),
+        ('fip', c_int32),
+        ('fcs', c_int32),
+        ('foo', c_int32),
+        ('fos', c_int32),
+        ('st_space', c_int32 * 20),
     ]
 
 class user_fpxregs_struct_x86(Structure):
@@ -428,36 +495,36 @@ class user_fpxregs_struct_x86(Structure):
         ('swd', c_ushort),
         ('twd', c_ushort),
         ('fop', c_ushort),
-        ('fip', c_long),
-        ('fcs', c_long),
-        ('foo', c_long),
-        ('fos', c_long),
-        ('mxcsr', c_long),
-        ('res', c_long),
-        ('st_space', c_long * 32),
-        ('xmm_space', c_long * 64),
-        ('padding', c_long * 24),
+        ('fip', c_int32),
+        ('fcs', c_int32),
+        ('foo', c_int32),
+        ('fos', c_int32),
+        ('mxcsr', c_int32),
+        ('reserved', c_int32),
+        ('st_space', c_int32 * 32),
+        ('xmm_space', c_int32 * 32),
+        ('padding', c_int32 * 56),
     ]
 
 class user_regs_struct_x86(Structure):
     _fields_ = [
-        ('ebx', c_long),
-        ('ecx', c_long),
-        ('edx', c_long),
-        ('esi', c_long),
-        ('edi', c_long),
-        ('ebp', c_long),
-        ('eax', c_long),
-        ('ds', c_long),
-        ('es', c_long),
-        ('fs', c_long),
-        ('gs', c_long),
-        ('orig_eax', c_long),
-        ('eip', c_long),
-        ('cs', c_long),
-        ('eflags', c_long),
-        ('esp', c_long),
-        ('ss', c_long)
+        ('ebx', c_int32),
+        ('ecx', c_int32),
+        ('edx', c_int32),
+        ('esi', c_int32),
+        ('edi', c_int32),
+        ('ebp', c_int32),
+        ('eax', c_int32),
+        ('xds', c_int32),
+        ('xes', c_int32),
+        ('xfs', c_int32),
+        ('xgs', c_int32),
+        ('orig_eax', c_int32),
+        ('eip', c_int32),
+        ('xcs', c_int32),
+        ('eflags', c_int32),
+        ('esp', c_uint32),
+        ('xss', c_int32)
     ]
 
 class IOVec(Structure):
@@ -546,21 +613,14 @@ class Ptrace:
             sys.exit(1)
 
     def init_proc_info(self, info: proc_info_t):
-        info.pid = -1
-        info.old_regs_struct = user_regs_struct_x86()
-        info.regs_struct = user_regs_struct_x86()
-        info.regs = IOVec()
+        info.regs.iov_base = ctypes.addressof(info.regs_struct)
+        info.regs.iov_len = sizeof(info.regs_struct)
 
-        info.old_fpregs_struct = user_fpregs_struct_x86()
-        info.fpregs_struct = user_fpregs_struct_x86()
-        info.fpregs = IOVec()
+        info.fpregs.iov_base = ctypes.addressof(info.fpregs_struct)
+        info.fpregs.iov_len = sizeof(info.fpregs_struct)
 
-        info.old_fpxregs_struct = user_fpxregs_struct_x86()
-        info.fpxregs_struct = user_fpxregs_struct_x86()
-        info.fpxregs = IOVec()
-
-        info.sig = -1
-        info.exit_code = -1
+        info.fpxregs.iov_base = ctypes.addressof(info.fpxregs_struct)
+        info.fpxregs.iov_len = sizeof(info.fpxregs_struct)
 
     def __exited_collect_regs(self, pid, info: proc_info_t):
         self.__ptrace_collect_regs(pid, info)
@@ -574,6 +634,7 @@ class Ptrace:
 
     def __ptrace_collect_regs(self, pid, info: proc_info_t):
         info.pid = pid
+
         info.old_regs_struct = info.regs_struct
         libc.ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, ctypes.byref(info.regs))
         
@@ -645,24 +706,54 @@ class Rappel:
         old_fpregs: user_fpregs_struct_x86 = info.old_fpregs_struct
         old_fpxregs: user_fpxregs_struct_x86 = info.old_fpxregs_struct
 
-        print(f"Registers:")
-        print(f"  eax: {hex(regs.eax)}")
-        print(f"  ebx: {hex(regs.ebx)}")
-        print(f"  ecx: {hex(regs.ecx)}")
-        print(f"  edx: {hex(regs.edx)}")
-        print(f"  esi: {hex(regs.esi)}")
-        print(f"  edi: {hex(regs.edi)}")
-        print(f"  ebp: {hex(regs.ebp)}")
-        print(f"  esp: {hex(regs.esp)}")
-        print(f"  eip: {hex(regs.eip)}")
-        print(f"  eflags: {hex(regs.eflags)}")
-        print(f"  cs: {hex(regs.cs)}")
-        print(f"  ds: {hex(regs.ds)}")
-        print(f"  es: {hex(regs.es)}")
-        print(f"  fs: {hex(regs.fs)}")
-        print(f"  gs: {hex(regs.gs)}")
-        print(f"  ss: {hex(regs.ss)}")
-        print(f"  orig_eax: {hex(regs.orig_eax)}")
+        printreg32("eax=", "eax", regs, old_regs, " ")
+        printreg32("ebx=", "ebx", regs, old_regs, " ")
+        printreg32("ecx=", "ecx", regs, old_regs, " ")
+        printreg32("edx=", "edx", regs, old_regs, " ")
+        printreg32("esi=", "esi", regs, old_regs, " ")
+        printreg32("edi=", "edi", regs, old_regs, "\n")
+
+        printreg32("eip=", "eip", regs, old_regs, " ")
+        printreg32("esp=", "esp", regs, old_regs, " ")
+        printreg32("ebp=", "ebp", regs, old_regs, " ")
+
+        of: c_uint8 = (regs.eflags & 0x800) >> 11
+        old_of: c_uint8 = (old_regs.eflags & 0x800) >> 11
+
+        df: c_uint8 = (regs.eflags & 0x400) >> 10
+        old_df: c_uint8 = (old_regs.eflags & 0x400) >> 10
+
+        sf: c_uint8 = (regs.eflags & 0x80) >> 7
+        old_sf: c_uint8 = (old_regs.eflags & 0x80) >> 7
+
+        zf: c_uint8 = (regs.eflags & 0x40) >> 6
+        old_zf: c_uint8 = (old_regs.eflags & 0x40) >> 6
+
+        af: c_uint8 = (regs.eflags & 0x10) >> 4
+        old_af: c_uint8 = (old_regs.eflags & 0x10) >> 4
+
+        pf: c_uint8 = (regs.eflags & 0x4) >> 2
+        old_pf: c_uint8 = (old_regs.eflags & 0x4) >> 2
+
+        cf: c_uint8 = (regs.eflags & 0x1)
+        old_cf: c_uint8 = (old_regs.eflags & 0x1)
+
+        printbit("[cf:", cf, old_cf, ", ")
+        printbit("zf:", zf, old_zf, ", ")
+        printbit("of:", of, old_of, ", ")
+        printbit("sf:", sf, old_sf, ", ")
+        printbit("pf:", pf, old_pf, ", ")
+        printbit("af:", af, old_af, ", ")
+        printbit("df:", df, old_df, "]\n")
+
+        printreg16("cs=", "xcs", regs, old_regs, " ")
+        printreg16("ss=", "xss", regs, old_regs, " ")
+        printreg16("ds=", "xds", regs, old_regs, " ")
+        printreg16("es=", "xes", regs, old_regs, " ")
+        printreg16("fs=", "xfs", regs, old_regs, " ")
+        printreg16("gs=", "xgs", regs, old_regs, "          ")
+
+        printreg32("efl=", "eflags", regs, old_regs, " ")
 
     
     def interact(self):
