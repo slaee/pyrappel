@@ -9,7 +9,7 @@ settings = {
     'path': 'bin',
     'start_addr': 0x400000,
     'arch': 'x86',
-    'all_regs': True,
+    'all_regs': False,
 }
 # endregion
 
@@ -23,6 +23,7 @@ import signal
 import stat
 import tempfile
 import keystone
+import argparse
 
 from ctypes import *
 # endregion
@@ -188,9 +189,9 @@ class ELF:
         
         TODO add data section, section headers
         """
-        if self.arch == 32:
+        if self.arch == 'x86':
             return self.__gen_elf32()
-        elif self.arch == 64:
+        elif self.arch == 'x64':
             return self.__gen_elf64()
         else:
             raise ValueError('Unknown architecture')
@@ -1018,36 +1019,33 @@ class Ptrace:
 
 # region RAPPEL UI
 class Rappel:
-    def __init__(self, arch=64):
+    def __init__(self, arch='x64'):
         self.arch = arch
         self.ptrace = Ptrace()
 
         buffer: Array = create_string_buffer(PAGE_SIZE)
         memset(buffer, TRAP, PAGE_SIZE)
 
-        if arch == 32:
-            # Create an ELF object
-            elf = ELF(32)
-            elf.start = settings.get('start_addr')
-            elf.code = buffer
-            elf.code_size = PAGE_SIZE
-            elf.gen_elf()
-            # Generate the ELF file
-            self.exe_fd = RappelExe.write(elf.out)
-            del elf
-            self.keystone = RappelKeystone('x86', '32')
-        elif arch == 64:
-            elf = ELF(64)
-            elf.start = settings.get('start_addr')
-            elf.code = buffer
-            elf.code_size = PAGE_SIZE
-            elf.gen_elf()
-            # Generate the ELF file
-            self.exe_fd = RappelExe.write(elf.out)
-            del elf
-            self.keystone = RappelKeystone('x86', '64')
-        else:
-            raise ValueError('Unknown architecture')
+        mode = '64'
+        match arch:
+            case 'x86':
+                mode = '32'
+            case 'x64':
+                arch = 'x86'
+                mode = '64'
+            case _:
+                raise ValueError('Unknown architecture')
+        
+        # Create an ELF object
+        elf = ELF(self.arch)
+        elf.start = settings.get('start_addr')
+        elf.code = buffer
+        elf.code_size = PAGE_SIZE
+        elf.gen_elf()
+        # Generate the ELF file
+        self.exe_fd = RappelExe.write(elf.out)
+        del elf
+        self.keystone = RappelKeystone(arch, mode)
         
     def __trace_child(self):
         try:
@@ -1065,15 +1063,18 @@ class Rappel:
             return None
         
     def display_info(self, info):
-        if self.arch == 32:
-            reg_info_x86(info)
-        elif self.arch == 64:
-            reg_info_x64(info)
+        match self.arch:
+            case 'x86':
+                reg_info_x86(info)
+            case 'x64':
+                reg_info_x64(info)
+            case _:
+                raise ValueError('Unknown architecture')
         
     def interact(self):
         child_pid = self.__trace_child()
 
-        info = self.__proc_info(self.arch)
+        info = self.__proc_info()
         self.ptrace.init_proc_info(info)
 
         self.ptrace.launch(child_pid)
@@ -1082,26 +1083,33 @@ class Rappel:
 
         self.display_info(info)
 
-    def __proc_info(self, arch):
-        if arch == 32:
-            return proc_info_t_32()
-        elif arch == 64:
-            return proc_info_t_64()
-        else:
-            raise ValueError('Unknown architecture')
-        
+    def __proc_info(self):
+        match self.arch:
+            case 'x86':
+                return proc_info_t_32()
+            case 'x64':
+                return proc_info_t_64()
+            case _:
+                raise ValueError('Unknown architecture')
 # endregion
 
 
 
 
 # region START RAPPEL
-def main():
-    rappel = Rappel(64)
+def main(args):
+    settings["arch"] = args.arch
+    settings["start_addr"] = int(args.start_addr, 16)
+    settings["all_regs"] = args.all_regs
+    rappel = Rappel(args.arch)
     rappel.interact()
-
-if __name__ == '__main__':
-    main()
     # Delete rapel-exe.* files settings path
     os.system(f'rm -rf {settings.get("path")}/rappel-exe.*')
+
+if __name__ == '__main__':
+    args = argparse.ArgumentParser()
+    args.add_argument('-a', '--arch', type=str, default='x64', choices=['x86', 'x64'], help='Architecture to use (x86 or x64)')
+    args.add_argument('-s', '--start-addr', type=str, default='0x400000', help='Start address for the ELF file')
+    args.add_argument('-A', '--all-regs', action='store_true', default=False, help='Display all registers')
+    main(args.parse_args())
 # endregion
