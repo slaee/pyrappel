@@ -897,7 +897,7 @@ class RappelKeystone:
 # region RAPPEL PTRACE
 
 # We need to use the libc library to call ptrace instead of using the ptrace module
-libc = CDLL(ctypes.util.find_library("c"), use_errno=True)
+libc = cdll.LoadLibrary("./libs/clib_wrapper_64.so")
 
 # ptrace(2) constants from sys/ptrace.h
 PTRACE_TRACEME = 0
@@ -1024,10 +1024,12 @@ class Ptrace:
             copy = create_string_buffer(alloc_sz)
 
             for i in range(0, alloc_sz // sizeof(c_ulong)):
-                addr: c_void_p = base_addr + i * sizeof(c_ulong)
+                addr: c_void_p = c_void_p(base_addr + i * sizeof(c_ulong))
 
                 data = libc.ptrace(PTRACE_PEEKDATA, pid, addr, 0)
                 data = data & 0xffffffffffffffff
+
+                print("data: ", REGFMT64.format(data))
                 
                 struct.pack_into("Q", copy, i * sizeof(c_ulong), data)
                 if copy[i] == -1:
@@ -1057,13 +1059,15 @@ class Ptrace:
                 addr: c_void_p = base_addr.value + i
                 val: c_uint32 = c_uint32(0)
 
-                if i + sizeof(c_long) < data_size:
+                if i + sizeof(c_uint32) < data_size:
                     val = struct.unpack_from("I", data, i)[0]
                 else:
                     if (self.read(pid, addr, ctypes.byref(val), sizeof(val)) == -1):
                         ret = -1
                     
                     memmove(ctypes.addressof(val), data[i:], data_size - i)
+
+                    print(f"[*] val: {REGFMT32.format(val.value)}")
 
                 if libc.ptrace(PTRACE_POKEDATA, pid, addr, val) == -1:
                     ret = -1
@@ -1075,17 +1079,20 @@ class Ptrace:
     def __write_64(self, pid, base_addr, data, data_size):
         try:
             ret = 0
-            for i in range(0, data_size, sizeof(c_long)):
+            for i in range(0, data_size, sizeof(c_uint64)):
                 addr: c_void_p = base_addr.value + i
-                val: c_ulong = c_ulong(0)
+                val: c_uint64 = c_uint64(0)
 
-                if i + sizeof(c_long) < data_size:
+                if i + sizeof(c_uint64) < data_size:
                     val = struct.unpack_from("Q", data, i)[0]
                 else:
                     if (self.read(pid, addr, ctypes.byref(val), sizeof(val)) == -1):
                         ret = -1
                     
                     memmove(ctypes.addressof(val), data[i:], data_size - i)
+
+                    # Use REGFMT64 to print the register value
+                    print(f"{REGFMT64.format(val.value)}")
 
                 if libc.ptrace(PTRACE_POKEDATA, pid, addr, val) == -1:
                     ret = -1
@@ -1208,15 +1215,21 @@ class Rappel:
             line = self.__prompt()
             # TODO use keyston to assemble the line
             try:
-                encoding, _ = self.keystone.assemble(line, current_addr)
-                size = len(encoding)
+                bytecode, _ = self.keystone.assemble(line, current_addr)
+                print(f"[*] bytecode: {bytecode}")
+
+                size = len(bytecode)
 
                 # Create a buffer to store the assembled code
-                assemble_buffer = create_string_buffer(encoding, size)
-                memmove(buffer, assemble_buffer, size)
-                buffer_size = size
+                code_buffer = create_string_buffer(size)
+                memset(code_buffer, TRAP, size)
+                memmove(code_buffer, bytecode, size)
 
-                self.__ptrace.write(child_pid, current_addr, buffer, buffer_size)
+                print(f"[*] code_buffer: {code_buffer.value}")
+
+                code_buffer_size = size
+
+                self.__ptrace.write(child_pid, current_addr, code_buffer, code_buffer_size)
                 self.__ptrace.cont(child_pid, info)
 
                 if self.__ptrace.reap(child_pid, info) == 1:
