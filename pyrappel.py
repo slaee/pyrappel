@@ -24,6 +24,7 @@ import stat
 import tempfile
 import keystone
 import argparse
+import struct
 
 from ctypes import *
 # endregion
@@ -354,37 +355,6 @@ class RappelExe:
             return ro_fd
         except Exception as e:
             print(f"[-] Error reopening {path} read-only: {e}")
-# endregion
-
-
-
-
-# region RAPPEL KEYSTONE
-class RappelKeystone:
-    def __init__(self, arch, mode):
-        self.arch = arch
-        self.mode = mode
-        self.ks = None
-
-        if arch == 'x86':
-            if mode == '32':
-                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_32)
-            elif mode == '64':
-                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64)
-            else:
-                raise ValueError('Unknown mode')
-        else:
-            raise ValueError('Unknown architecture')
-        
-    def assemble(self, code: str) -> bytes:
-        """Assemble the given code into machine code."""
-        try:
-            encoding, count = self.ks.asm(code)
-            print(f"[+] Assembled {count} instructions.")
-            return bytes(encoding)
-        except keystone.KsError as e:
-            print(f"[-] Keystone error: {e}")
-            raise
 # endregion
 
 
@@ -895,6 +865,35 @@ def reg_info_x64(info: proc_info_t_64):
 
 
 
+# region RAPPEL KEYSTONE
+class RappelKeystone:
+    def __init__(self, arch, mode):
+        self.arch = arch
+        self.mode = mode
+        self.ks = None
+
+        if arch == 'x86':
+            if mode == '32':
+                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_32)
+            elif mode == '64':
+                self.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64)
+            else:
+                raise ValueError('Unknown mode')
+        else:
+            raise ValueError('Unknown architecture')
+        
+    def assemble(self, code: str, addr: c_void_p):
+        try:
+            return self.ks.asm(code, addr.value, as_bytes=True)
+        except keystone.KsError as e:
+            print(f"[-] Error assembling code: {e}")
+            sys.exit(1)
+# endregion
+
+
+
+
+
 # region RAPPEL PTRACE
 
 # We need to use the libc library to call ptrace instead of using the ptrace module
@@ -903,6 +902,7 @@ libc = CDLL(ctypes.util.find_library("c"), use_errno=True)
 # ptrace(2) constants from sys/ptrace.h
 PTRACE_TRACEME = 0
 PTRACE_PEEKDATA = 2
+PTRACE_POKEDATA = 5
 PTRACE_EVENT_EXIT = 6
 PTRACE_CONT = 7
 PTRACE_DETACH = 17
@@ -976,6 +976,124 @@ class Ptrace:
             print(f"[-] Error reaping process: {e}")
             sys.exit(1)
 
+    def __round_up(self, x, multiple):
+        if x >= 0:
+            return (x + multiple - 1) * multiple
+        else:
+            return (x / multiple) * multiple
+
+    def read(self, pid, base_address, out, data_size):
+        if settings.get('arch') == 'x86':
+            ret = self.__read_32(pid, base_address, out, data_size)
+        elif settings.get('arch') == 'x64':
+            ret = self.__read_64(pid, base_address, out, data_size)
+        else:
+            raise ValueError('Unknown architecture')
+        return ret
+        
+    def __read_32(self, pid, base_addr, out, data_size):
+        try:
+            ret = 0
+            alloc_sz = self.__round_up(data_size, sizeof(c_uint32))
+
+            copy = create_string_buffer(alloc_sz)
+
+            for i in range(0, alloc_sz // sizeof(c_uint32)):
+                addr: c_void_p = base_addr + i * sizeof(c_uint32)
+
+                data = libc.ptrace(PTRACE_PEEKDATA, pid, addr, 0)
+                data = data & 0xffffffff
+                
+                struct.pack_into("I", copy, i * sizeof(c_uint32), data)
+                if copy[i] == -1:
+                    ret = -1
+                    raise OSError(f"ptrace() - failed to read value at {addr}: {os.strerror(ctypes.get_errno())}")
+                
+            memmove(out, copy, data_size)
+            del copy
+
+            return ret
+        except Exception as e:
+            raise e
+        
+    def __read_64(self, pid, base_addr, out, data_size):
+        try:
+            ret = 0
+            alloc_sz = self.__round_up(data_size, sizeof(c_ulong))
+
+            copy = create_string_buffer(alloc_sz)
+
+            for i in range(0, alloc_sz // sizeof(c_ulong)):
+                addr: c_void_p = base_addr + i * sizeof(c_ulong)
+
+                data = libc.ptrace(PTRACE_PEEKDATA, pid, addr, 0)
+                data = data & 0xffffffffffffffff
+                
+                struct.pack_into("Q", copy, i * sizeof(c_ulong), data)
+                if copy[i] == -1:
+                    ret = -1
+                    raise OSError(f"ptrace() - failed to read value at {addr}: {os.strerror(ctypes.get_errno())}")
+                
+            memmove(out, copy, data_size)
+            del copy
+
+            return ret
+        except Exception as e:
+            raise e
+        
+    def write(self, pid, base_addr, data, data_size):
+        if settings.get('arch') == 'x86':
+            ret = self.__write_32(pid, base_addr, data, data_size)
+        elif settings.get('arch') == 'x64':
+            ret = self.__write_64(pid, base_addr, data, data_size)
+        else:
+            raise ValueError('Unknown architecture')
+        return ret
+        
+    def __write_32(self, pid, base_addr, data, data_size):
+        try:
+            ret = 0
+            for i in range(0, data_size, sizeof(c_uint32)):
+                addr: c_void_p = base_addr.value + i
+                val: c_uint32 = c_uint32(0)
+
+                if i + sizeof(c_long) < data_size:
+                    val = struct.unpack_from("I", data, i)[0]
+                else:
+                    if (self.read(pid, addr, ctypes.byref(val), sizeof(val)) == -1):
+                        ret = -1
+                    
+                    memmove(ctypes.addressof(val), data[i:], data_size - i)
+
+                if libc.ptrace(PTRACE_POKEDATA, pid, addr, val) == -1:
+                    ret = -1
+                    raise OSError(f"ptrace() - failed to write value at {addr}: {os.strerror(ctypes.get_errno())}")
+            return ret
+        except Exception as e:
+            raise e
+        
+    def __write_64(self, pid, base_addr, data, data_size):
+        try:
+            ret = 0
+            for i in range(0, data_size, sizeof(c_long)):
+                addr: c_void_p = base_addr.value + i
+                val: c_ulong = c_ulong(0)
+
+                if i + sizeof(c_long) < data_size:
+                    val = struct.unpack_from("Q", data, i)[0]
+                else:
+                    if (self.read(pid, addr, ctypes.byref(val), sizeof(val)) == -1):
+                        ret = -1
+                    
+                    memmove(ctypes.addressof(val), data[i:], data_size - i)
+
+                if libc.ptrace(PTRACE_POKEDATA, pid, addr, val) == -1:
+                    ret = -1
+                    raise OSError(f"ptrace() - failed to write value at {addr}: {os.strerror(ctypes.get_errno())}")
+            return ret
+        except Exception as e:
+            raise e
+
     def init_proc_info(self, info: proc_info_t):
         info.regs.iov_base = ctypes.addressof(info.regs_struct)
         info.regs.iov_len = sizeof(info.regs_struct)
@@ -1021,8 +1139,9 @@ class Ptrace:
 class Rappel:
     def __init__(self, arch='x64'):
         self.arch = arch
-        self.ptrace = Ptrace()
-
+        self.__in_block = False
+        self.__ptrace = Ptrace()
+    
         buffer: Array = create_string_buffer(PAGE_SIZE)
         memset(buffer, TRAP, PAGE_SIZE)
 
@@ -1051,7 +1170,7 @@ class Rappel:
         try:
             trace_pid = os.fork()
             if trace_pid == 0:
-                self.ptrace.child(self.exe_fd)
+                self.__ptrace.child(self.exe_fd)
                 os.abort()
             elif trace_pid < 0:
                 raise OSError(f"Failed to fork: {os.strerror(ctypes.get_errno())}")
@@ -1075,13 +1194,46 @@ class Rappel:
         child_pid = self.__trace_child()
 
         info = self.__proc_info()
-        self.ptrace.init_proc_info(info)
-
-        self.ptrace.launch(child_pid)
-        self.ptrace.cont(child_pid, info)
-        self.ptrace.reap(child_pid, info)
+        self.__ptrace.init_proc_info(info)
+        self.__ptrace.launch(child_pid)
+        self.__ptrace.cont(child_pid, info)
+        self.__ptrace.reap(child_pid, info)
 
         self.display_info(info)
+
+        buffer: Array = create_string_buffer(PAGE_SIZE)
+        buffer_size: c_size_t = c_size_t(0)
+        current_addr: c_void_p = c_void_p(settings.get('start_addr'))
+        while True:
+            line = self.__prompt()
+            # TODO use keyston to assemble the line
+            try:
+                encoding, _ = self.keystone.assemble(line, current_addr)
+                size = len(encoding)
+
+                # Create a buffer to store the assembled code
+                assemble_buffer = create_string_buffer(encoding, size)
+                memmove(buffer, assemble_buffer, size)
+                buffer_size = size
+
+                self.__ptrace.write(child_pid, current_addr, buffer, buffer_size)
+                self.__ptrace.cont(child_pid, info)
+
+                if self.__ptrace.reap(child_pid, info) == 1:
+                    break
+
+                self.display_info(info)
+            except Exception as e:
+                raise e
+
+    def __prompt(self):
+        if self.__in_block:
+            print("... ", end="")
+        else:
+            print("> ", end="")
+        return input()
+        
+
 
     def __proc_info(self):
         match self.arch:
