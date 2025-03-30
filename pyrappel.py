@@ -360,7 +360,7 @@ class ExecutableFile:
              try:
                  os.close(self._fd)
              except OSError as e:
-                  logging.error(f"[-] Warning: Failed to close fd {self._fd} for {self.path}: {e}", file=sys.stderr)
+                  logging.error(f"[-] Warning: Failed to close fd {self._fd} for {self.path}: {e}")
              finally:
                  self._fd = -1 # Mark as closed
 
@@ -461,14 +461,14 @@ class RappelExe:
                         try: os.unlink(file_path)
                         except OSError: pass
                     else:
-                        logging.error(f"[-] Warning: Executable written to '{file_path}' but failed to reopen read-only.", file=sys.stderr)
+                        logging.error(f"[-] Warning: Executable written to '{file_path}' but failed to reopen read-only.")
                 raise OSError(err, f"Failed to reopen '{file_path}' read-only: {os.strerror(err)}")
 
             # Return the wrapper object
             return ExecutableFile(ro_fd, file_path, is_temp)
 
         except Exception as e:
-            logging.error(f"[-] Error writing executable: {e}", file=sys.stderr)
+            logging.error(f"[-] Error writing executable: {e}")
             # Ensure FDs are closed on error
             if fd >= 0:
                 try: os.close(fd)
@@ -502,7 +502,7 @@ class RappelExe:
             except FileNotFoundError:
                 pass # Already deleted, ignore
             except OSError as e:
-                logging.warning(f"[-] Warning: Failed to clean up temporary file '{temp_path}': {e}", file=sys.stderr)
+                logging.warning(f"[-] Warning: Failed to clean up temporary file '{temp_path}': {e}")
 
 # endregion
 
@@ -1141,7 +1141,7 @@ class RappelKeystone:
         try:
             self.ks = keystone.Ks(self.ks_arch, self.ks_mode)
         except keystone.KsError as e:
-            logging.error(f"[-] Failed to initialize Keystone for {arch}: {e}", file=sys.stderr)
+            logging.error(f"[-] Failed to initialize Keystone for {arch}: {e}")
             raise # Re-raise the exception
 
     def assemble(self, code: str, addr: int):
@@ -1155,10 +1155,10 @@ class RappelKeystone:
             return bytecode, count
         except keystone.KsError as e:
             # Provide more context in the error message
-            logging.error(f"[-] Keystone Error: {e}", file=sys.stderr)
-            logging.error(f"    Architecture: {self.arch_name}, Mode: {self.ks_mode}", file=sys.stderr)
-            logging.error(f"    Address: 0x{addr:x}", file=sys.stderr)
-            logging.error(f"    Code: '{code.strip()}'", file=sys.stderr)
+            logging.error(f"[-] Keystone Error: {e}")
+            logging.error(f"    Architecture: {self.arch_name}, Mode: {self.ks_mode}")
+            logging.error(f"    Address: 0x{addr:x}")
+            logging.error(f"    Code: '{code.strip()}'")
             return None, 0 # Return None or empty bytes on error
 
 # endregion
@@ -1179,7 +1179,7 @@ try:
     # Load libc using cdll
     libc = cdll.LoadLibrary(libc_path)
 except OSError as e:
-    logging.error(f"[-] Failed to load libc from {libc_path}: {e}", file=sys.stderr)
+    logging.error(f"[-] Failed to load libc from {libc_path}: {e}")
     # Try loading a specific wrapper if direct libc fails or is insufficient
     # Example: libc = cdll.LoadLibrary("./libs/clib_wrapper_64.so")
     # Make sure the wrapper exists and is compatible.
@@ -1207,8 +1207,8 @@ try:
     # libc.fexecve.restype = c_int
 
 except AttributeError as e:
-     logging.error(f"[-] Error setting up ctypes for libc functions: {e}", file=sys.stderr)
-     print("    Ensure libc was loaded correctly and exports ptrace, waitpid.", file=sys.stderr)
+     logging.error(f"[-] Error setting up ctypes for libc functions: {e}")
+     print("    Ensure libc was loaded correctly and exports ptrace, waitpid.")
      sys.exit(1)
 
 
@@ -1330,7 +1330,7 @@ class Ptrace:
         else:
             # Default for unknown requests: Assume data might be a pointer or 0/None.
             # Try casting to c_void_p, but log a warning.
-            print(f"[!] Warning: Unhandled ptrace request type {request} in _ptrace_call data handling.", file=sys.stderr)
+            print(f"[!] Warning: Unhandled ptrace request type {request} in _ptrace_call data handling.")
             # Check if data is already a ctypes pointer type before casting
             if isinstance(data, ctypes._Pointer):
                  data_arg = data
@@ -1362,7 +1362,7 @@ class Ptrace:
                                                   PTRACE_GETSIGINFO, PTRACE_SETSIGINFO,
                                                   PTRACE_GETEVENTMSG):
                  # Don't print error for common cases where process might die between steps
-                 # print(f"[*] Note: ptrace({request}, pid={pid}) failed: Process already exited (ESRCH).", file=sys.stderr)
+                 # print(f"[*] Note: ptrace({request}, pid={pid}) failed: Process already exited (ESRCH).")
                  return result # Allow caller (like _try_collect_regs) to handle
              # Raise error for other failures
              raise OSError(err, f"ptrace({request}, pid={pid}, addr={addr}, data={data}) failed: {os.strerror(err)}")
@@ -1392,12 +1392,12 @@ class Ptrace:
 
             # If execve returns, an error occurred
             err = ctypes.get_errno()
-            logging.error(f"[-] Child: execve failed for '{exe_path}': {os.strerror(err)}", file=sys.stderr)
+            logging.error(f"[-] Child: execve failed for '{exe_path}': {os.strerror(err)}")
             os._exit(1) # Use _exit in child after fork
 
         except Exception as e:
             # Catch potential exceptions during setup or execve call itself
-            logging.error(f"[-] Child process error during PTRACE_TRACEME or execve preparation: {e}", file=sys.stderr)
+            logging.error(f"[-] Child process error during PTRACE_TRACEME or execve preparation: {e}")
             os._exit(1) # Ensure child exits on any error here
 
     def launch(self, pid):
@@ -1411,7 +1411,7 @@ class Ptrace:
                 raise OSError(err, f"waitpid failed for initial trap (pid={pid}): {os.strerror(err)}")
 
             if not os.WIFSTOPPED(status.value) or os.WSTOPSIG(status.value) != signal.SIGTRAP:
-                 print(f"[!] Expected SIGTRAP after execve, but got status {status.value:#x}", file=sys.stderr)
+                 print(f"[!] Expected SIGTRAP after execve, but got status {status.value:#x}")
                  # Optionally decode status here (WIFEXITED, WIFSIGNALED etc.)
                  return False # Indicate failure
 
@@ -1424,10 +1424,10 @@ class Ptrace:
             return True # Indicate success
 
         except OSError as e:
-            logging.error(f"[-] Error launching/waiting for process {pid}: {e}", file=sys.stderr)
+            logging.error(f"[-] Error launching/waiting for process {pid}: {e}")
             return False
         except Exception as e:
-            logging.error(f"[-] Unexpected error during launch: {e}", file=sys.stderr)
+            logging.error(f"[-] Unexpected error during launch: {e}")
             return False
 
     def cont(self, pid):
@@ -1439,7 +1439,7 @@ class Ptrace:
         except OSError as e:
             # Ignore ESRCH if process died between reap and cont
             if e.errno != errno.ESRCH:
-                 logging.error(f"[-] Error continuing process {pid}: {e}", file=sys.stderr)
+                 logging.error(f"[-] Error continuing process {pid}: {e}")
                  raise # Re-raise unexpected errors
 
     def detach(self, pid):
@@ -1449,7 +1449,7 @@ class Ptrace:
             logging.info(f"[*] Detached from process {pid}")
         except OSError as e:
             if e.errno != errno.ESRCH:
-                logging.error(f"[-] Error detaching from process {pid}: {e}", file=sys.stderr)
+                logging.error(f"[-] Error detaching from process {pid}: {e}")
                 # Decide whether to raise or just warn
 
     def reap(self, pid, info):
@@ -1463,7 +1463,7 @@ class Ptrace:
                 err = ctypes.get_errno()
                 # If waitpid fails with ECHILD, the process is already gone (e.g. detached and exited)
                 if err == errno.ECHILD:
-                    logging.info(f"[*] waitpid({pid}): No such child process (already reaped or detached?). Assuming exited.", file=sys.stderr)
+                    logging.info(f"[*] waitpid({pid}): No such child process (already reaped or detached?). Assuming exited.")
                     info.sig.value = 0 # Treat as normal exit if we lost track
                     info.exit_code.value = 0
                     return 1 # Indicate exit
@@ -1508,7 +1508,7 @@ class Ptrace:
                             info.exit_code.value = exit_code_ptr.contents.value
                             logging.info(f"[+] Exit code reported: {info.exit_code.value}")
                         except OSError as e:
-                            logging.error(f"[-] Failed to get exit code via PTRACE_GETEVENTMSG: {e}", file=sys.stderr)
+                            logging.error(f"[-] Failed to get exit code via PTRACE_GETEVENTMSG: {e}")
                             info.exit_code.value = -1 # Mark as unknown
 
                         # Collect final registers before confirming exit
@@ -1542,21 +1542,21 @@ class Ptrace:
                 return 0 # Indicate stopped, ready for next instruction
 
             # Should not happen if waitpid returned successfully
-            print(f"[!] Unknown wait status for pid={pid}: {status.value:#x}", file=sys.stderr)
+            print(f"[!] Unknown wait status for pid={pid}: {status.value:#x}")
             return 1 # Treat as finished to avoid infinite loop
 
         except OSError as e:
             # If reap fails with ESRCH, the process is already gone
             if e.errno == errno.ESRCH:
-                logging.info(f"[*] reap({pid}): Process already exited (ESRCH).", file=sys.stderr)
+                logging.info(f"[*] reap({pid}): Process already exited (ESRCH).")
                 info.sig.value = 0
                 info.exit_code.value = 0
                 return 1 # Indicate exited
-            logging.error(f"[-] Error reaping process {pid}: {e}", file=sys.stderr)
+            logging.error(f"[-] Error reaping process {pid}: {e}")
             # Decide how to handle this - maybe treat as exited?
             return 1
         except Exception as e:
-            logging.error(f"[-] Unexpected error during reap: {e}", file=sys.stderr)
+            logging.error(f"[-] Unexpected error during reap: {e}")
             return 1 # Treat as finished
 
 
@@ -1592,7 +1592,7 @@ class Ptrace:
             return bytes(data)
 
         except OSError as e:
-            logging.error(f"[-] Error reading memory from pid={pid} at {base_address:#x} (size={size}): {e}", file=sys.stderr)
+            logging.error(f"[-] Error reading memory from pid={pid} at {base_address:#x} (size={size}): {e}")
             return None
 
     def write(self, pid, base_address, data):
@@ -1637,7 +1637,7 @@ class Ptrace:
             return True
 
         except OSError as e:
-            logging.error(f"[-] Error writing memory to pid={pid} at {base_address:#x} (size={size}): {e}", file=sys.stderr)
+            logging.error(f"[-] Error writing memory to pid={pid} at {base_address:#x} (size={size}): {e}")
             return False
 
     def init_proc_info(self, info):
@@ -1671,10 +1671,10 @@ class Ptrace:
         except OSError as e:
             # Ignore ESRCH (process died) or EIO (ptrace error after exit)
             if e.errno in (errno.ESRCH, errno.EIO):
-                # print(f"[*] Note: Could not collect final registers for pid={pid}: {e}", file=sys.stderr)
+                # print(f"[*] Note: Could not collect final registers for pid={pid}: {e}")
                 pass
             else:
-                print(f"[!] Warning: Unexpected error collecting final registers for pid={pid}: {e}", file=sys.stderr)
+                print(f"[!] Warning: Unexpected error collecting final registers for pid={pid}: {e}")
 
     def _collect_regs(self, pid, info):
         """Collects GPRs and FPRs using PTRACE_GETREGSET."""
@@ -1690,7 +1690,7 @@ class Ptrace:
         try:
             self._ptrace_call(PTRACE_GETREGSET, pid, NT_PRSTATUS, byref(info.regs))
         except OSError as e:
-            logging.error(f"[-] Failed to get GPRs (NT_PRSTATUS) for pid={pid}: {e}", file=sys.stderr)
+            logging.error(f"[-] Failed to get GPRs (NT_PRSTATUS) for pid={pid}: {e}")
             # Optionally clear current regs or re-raise
             raise
 
@@ -1709,7 +1709,7 @@ class Ptrace:
             # Check actual length returned in iov_len if needed, though it might not be updated by kernel
         except OSError as e:
             # This might fail if FP unit isn't enabled or GETREGSET doesn't support NT_PRFPREG well
-            # print(f"[*] Note: Failed to get FPRs (NT_PRFPREG) for pid={pid}: {e}", file=sys.stderr)
+            # print(f"[*] Note: Failed to get FPRs (NT_PRFPREG) for pid={pid}: {e}")
             # Mark fpregs as invalid/unavailable by setting iov_len to 0?
             info.fpregs.iov_len = 0
 
@@ -1728,7 +1728,7 @@ class Ptrace:
                  info.fpxregs.iov_len = sizeof(user_fpxregs_struct_x86)
                  self._ptrace_call(PTRACE_GETREGSET, pid, NT_PRXFPREG, byref(info.fpxregs))
             except OSError as e:
-                 # print(f"[*] Note: Failed to get Extended FPRs (NT_PRXFPREG) for pid={pid}: {e}", file=sys.stderr)
+                 # print(f"[*] Note: Failed to get Extended FPRs (NT_PRXFPREG) for pid={pid}: {e}")
                  info.fpxregs.iov_len = 0
 
         # Reset signal/exit code unless they were set by reap() logic
@@ -1787,7 +1787,7 @@ class Rappel:
             self.ptrace.init_proc_info(self.proc_info)
 
         except Exception as e:
-            logging.error(f"[-] Initialization failed: {e}", file=sys.stderr)
+            logging.error(f"[-] Initialization failed: {e}")
             # Ensure cleanup happens even if init fails partially
             self.cleanup()
             # Re-raise or exit
@@ -1819,7 +1819,7 @@ class Rappel:
                 raise OSError(err, f"Failed to fork: {os.strerror(err)}")
 
         except Exception as e:
-            logging.error(f"[-] Error forking/execing child: {e}", file=sys.stderr)
+            logging.error(f"[-] Error forking/execing child: {e}")
             return -1 # Indicate failure
 
     def display_info(self):
@@ -1831,9 +1831,9 @@ class Rappel:
             elif self.arch == 'x64':
                 reg_info_x64(self.proc_info)
             else:
-                print(f"[!] Unknown architecture for display: {self.arch}", file=sys.stderr)
+                print(f"[!] Unknown architecture for display: {self.arch}")
         except Exception as e:
-             print(f"[!] Error displaying register info: {e}", file=sys.stderr)
+             print(f"[!] Error displaying register info: {e}")
 
 
     def interact(self):
@@ -1853,7 +1853,7 @@ class Rappel:
             logging.info("[*] Continuing child to first instruction...")
             self.ptrace.cont(self.child_pid)
             if self.ptrace.reap(self.child_pid, self.proc_info) == 1:
-                logging.error("[-] Child exited unexpectedly during initial run.", file=sys.stderr)
+                logging.error("[-] Child exited unexpectedly during initial run.")
                 self.display_info() # Show final state
                 return # Exit interaction
 
@@ -1891,7 +1891,7 @@ class Rappel:
 
                     # Write the instruction bytes to memory, overwriting TRAP(s)
                     if not self.ptrace.write(self.child_pid, self.current_addr, bytecode):
-                        logging.error("[-] Failed to write instruction to memory. Aborting.", file=sys.stderr)
+                        logging.error("[-] Failed to write instruction to memory. Aborting.")
                         break
 
                     # If using INT3 breakpoints, restore original byte after single step? No, we overwrite permanently.
@@ -1918,13 +1918,13 @@ class Rappel:
                          expected_next_addr = self.current_addr + instruction_size
                          actual_next_addr = self.proc_info.regs_struct.rip
                          if actual_next_addr != expected_next_addr:
-                              logging.warning(f"[!] Warning: RIP is {actual_next_addr:#x}, expected {expected_next_addr:#x}. Control flow changed?", file=sys.stderr)
+                              logging.warning(f"[!] Warning: RIP is {actual_next_addr:#x}, expected {expected_next_addr:#x}. Control flow changed?")
                          self.current_addr = actual_next_addr
                     else: # x86
                          expected_next_addr = self.current_addr + instruction_size
                          actual_next_addr = self.proc_info.regs_struct.eip
                          if actual_next_addr != expected_next_addr:
-                              logging.warning(f"[!] Warning: EIP is {actual_next_addr:#x}, expected {expected_next_addr:#x}. Control flow changed?", file=sys.stderr)
+                              logging.warning(f"[!] Warning: EIP is {actual_next_addr:#x}, expected {expected_next_addr:#x}. Control flow changed?")
                          self.current_addr = actual_next_addr
 
                     # print(f"[*] Next instruction address: {self.current_addr:#x}") # Debug
@@ -1937,7 +1937,7 @@ class Rappel:
                     # Optionally try to detach or kill child cleanly?
                     break # Exit loop on Ctrl+C
                 except Exception as loop_e:
-                    logging.error(f"[-] Error during interaction loop: {loop_e}", file=sys.stderr)
+                    logging.error(f"[-] Error during interaction loop: {loop_e}")
                     # Decide whether to continue or break
                     break
 
@@ -1974,9 +1974,9 @@ class Rappel:
             except OSError as e:
                  # Ignore ESRCH if detach failed because it was already gone
                  if e.errno != errno.ESRCH:
-                      logging.error(f"[-] Error detaching/killing child process {self.child_pid}: {e}", file=sys.stderr)
+                      logging.error(f"[-] Error detaching/killing child process {self.child_pid}: {e}")
             except Exception as e:
-                logging.error(f"[-] Unexpected error during child cleanup: {e}", file=sys.stderr)
+                logging.error(f"[-] Unexpected error during child cleanup: {e}")
             self.child_pid = -1
 
         # Close and delete the temporary executable file
@@ -1990,7 +1990,7 @@ class Rappel:
                  os.unlink(self.exe_path)
                  logging.info(f"[*] Cleaned up executable file: {self.exe_path}")
              except OSError as e:
-                 logging.warning(f"[!] Failed to cleanup executable '{self.exe_path}': {e}", file=sys.stderr)
+                 logging.warning(f"[!] Failed to cleanup executable '{self.exe_path}': {e}")
 
         logging.info("[*] Cleanup finished.")
 
@@ -2006,7 +2006,7 @@ def main(args):
     try:
         settings["start_addr"] = int(args.start_addr, 0) # Allow 0x prefix or decimal
     except ValueError:
-        logging.error(f"[-] Invalid start address format: '{args.start_addr}'. Use hex (0x...) or decimal.", file=sys.stderr)
+        logging.error(f"[-] Invalid start address format: '{args.start_addr}'. Use hex (0x...) or decimal.")
         sys.exit(1)
     settings["all_regs"] = args.all_regs
 
