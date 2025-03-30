@@ -17,3 +17,5 @@ $ pip3 install -r requirements.txt
 $ chmod +x pyrappel.py
 $ ./pyrappel.py -h
 ```
+
+# Checkout for original C version -> [Rappel](https://github.com/yrp604/rappel/issues/6)
