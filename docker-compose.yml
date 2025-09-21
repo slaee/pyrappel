@@ -1,0 +1,12 @@
+services:
+  pyrappel:
+    build: .
+    ports:
+      - "30003:1337"
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    privileged: true
+    tmpfs:
+      - /tmp
+
