@@ -1,4 +1,4 @@
-from ctypes import *
+from ctypes import Structure, c_uint32, c_uint16, c_uint8, c_ulonglong, c_uint64, c_long, c_int, sizeof, cast, POINTER, addressof
 from dataclasses import dataclass
 from ..types import IOVec
 from ..config import settings

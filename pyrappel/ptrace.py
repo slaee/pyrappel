@@ -6,7 +6,7 @@ import ctypes
 import ctypes.util
 import logging
 import signal
-from ctypes import *
+from ctypes import cdll, c_int, c_void_p, c_long, POINTER, c_ulong, set_errno, get_errno, byref, pointer, sizeof, addressof
 
 
 libc_path = ctypes.util.find_library('c')

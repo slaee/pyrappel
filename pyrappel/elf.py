@@ -1,4 +1,4 @@
-from ctypes import *
+from ctypes import c_uint32, c_uint16, c_uint8, c_uint64, c_int32, c_int64, c_int16, Structure, sizeof, create_string_buffer, memset, addressof, memmove, cast, POINTER
 from .config import PAGE_SIZE, TRAP, settings
 
 EM_X86_64 = 62

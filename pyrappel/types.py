@@ -1,4 +1,4 @@
-from ctypes import *
+from ctypes import Structure, c_void_p, c_size_t
 
 class IOVec(Structure):
     _fields_ = [
