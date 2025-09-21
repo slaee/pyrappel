@@ -11,6 +11,8 @@ from .exec_file import RappelExe
 from .ptrace import Ptrace
 from .arch import create_strategy
 
+initial_data_buffer = ctypes.create_string_buffer(PAGE_SIZE)
+ctypes.memset(initial_data_buffer, 0, PAGE_SIZE)
 
 class Rappel:
     def __init__(self, arch='x64'):
@@ -29,7 +31,7 @@ class Rappel:
             initial_code_buffer = ctypes.create_string_buffer(PAGE_SIZE)
             ctypes.memset(initial_code_buffer, TRAP, PAGE_SIZE)
             logging.info("[*] Generating minimal ELF executable...")
-            elf = ELF(self.arch, code=initial_code_buffer.raw, code_size=PAGE_SIZE)
+            elf = ELF(self.arch, code=initial_code_buffer.raw, code_size=PAGE_SIZE, data=initial_data_buffer.raw, data_size=PAGE_SIZE)
             elf.gen_elf()
             logging.info(f"[*] Writing executable to temporary file in '{settings['path']}'...")
             self.exe_file_obj = RappelExe.write(elf.out, path=None)
@@ -121,7 +123,9 @@ class Rappel:
                             logging.warning(f"[!] Warning: RIP is {actual_next_addr:#x}, expected {expected_next_addr:#x}. Control flow changed?")
                         self.current_addr = actual_next_addr
                     else:
-                        expected_next_addr = self.current_addr + instruction_size + 1
+                        # On x86, after hitting INT3 the kernel reports EIP at the trap address
+                        # (not after it). So the expected next address does not add +1.
+                        expected_next_addr = self.current_addr + instruction_size
                         actual_next_addr = self.proc_info.regs_struct.eip
                         if actual_next_addr != expected_next_addr:
                             logging.warning(f"[!] Warning: EIP is {actual_next_addr:#x}, expected {expected_next_addr:#x}. Control flow changed?")

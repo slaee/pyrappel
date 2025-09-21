@@ -8,9 +8,6 @@ import logging
 import signal
 from ctypes import *
 
-from .config import settings
-from .arch import create_strategy
-
 
 libc_path = ctypes.util.find_library('c')
 if not libc_path:

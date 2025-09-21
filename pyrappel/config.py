@@ -21,15 +21,6 @@ if not os.path.exists(settings['path']):
 # region Constants
 PAGE_SIZE = os.sysconf('SC_PAGE_SIZE')
 TRAP = 0xcc  # INT3 instruction byte
-
-# Formatting and ANSI colors used in register dumps
-REGFMT64 = "{:016x}"
-REGFMT32 = "{:08x}"
-REGFMT16 = "{:04x}"
-REGFMT8 = "{:02x}"
-
-RED = "\x1b[1;31m"
-RST = "\x1b[0m"
 # endregion
 
 
