@@ -1,4 +1,3 @@
-#!.venv/bin/python3.12
 # region IMPORTS
 import os
 import sys
@@ -12,7 +11,6 @@ import struct
 import errno
 import logging
 
-from msl.loadlib import Server32 # Keep if 32-bit server communication might be needed later, otherwise remove
 from ctypes import *
 # endregion
 
@@ -663,35 +661,35 @@ def print_bit(name, y_bit, z_bit, trailer):
 # --- x86 (32-bit) ---
 class user_fpregs_struct_x86(Structure):
     _fields_ = [
-        ('cwd', c_long),
-        ('swd', c_long),
-        ('twd', c_long),
-        ('fip', c_long),
-        ('fcs', c_long),
-        ('foo', c_long),
-        ('fos', c_long),
-        ('st_space', c_long * 20), # 8 * 10 bytes = 80 bytes = 20 longs
+        ('cwd', c_uint32),
+        ('swd', c_uint32),
+        ('twd', c_uint32),
+        ('fip', c_uint32),
+        ('fcs', c_uint32),
+        ('foo', c_uint32),
+        ('fos', c_uint32),
+        ('st_space', c_uint32 * 20), # 8 * 10 bytes = 80 bytes = 20 dwords
     ]
 
 class user_regs_struct_x86(Structure):
     _fields_ = [
-        ('ebx', c_long),
-        ('ecx', c_long),
-        ('edx', c_long),
-        ('esi', c_long),
-        ('edi', c_long),
-        ('ebp', c_long),
-        ('eax', c_long),
-        ('xds', c_long), # Historically unsigned short, padded to long
-        ('xes', c_long), # " "
-        ('xfs', c_long), # " "
-        ('xgs', c_long), # " "
-        ('orig_eax', c_long),
-        ('eip', c_long),
-        ('xcs', c_long), # Historically unsigned short, padded to long
-        ('eflags', c_long),
-        ('esp', c_long),
-        ('xss', c_long)  # Historically unsigned short, padded to long
+        ('ebx', c_uint32),
+        ('ecx', c_uint32),
+        ('edx', c_uint32),
+        ('esi', c_uint32),
+        ('edi', c_uint32),
+        ('ebp', c_uint32),
+        ('eax', c_uint32),
+        ('xds', c_uint32), # selector in low 16 bits
+        ('xes', c_uint32),
+        ('xfs', c_uint32),
+        ('xgs', c_uint32),
+        ('orig_eax', c_uint32),
+        ('eip', c_uint32),
+        ('xcs', c_uint32),
+        ('eflags', c_uint32),
+        ('esp', c_uint32),
+        ('xss', c_uint32)
     ]
 
 # FXSAVE structure (used for PTRACE_GETREGSET with NT_PRXFPREG on x86)
@@ -1284,11 +1282,15 @@ PACK_SIZE = 8 if settings['arch'] == 'x64' else 4
 class Ptrace:
     def __init__(self, arch):
         self.arch = arch
-        self.word_size = 8 if arch == 'x64' else 4
-        # Define masks based on architecture
-        self.word_mask = 0xffffffffffffffff if arch == 'x64' else 0xffffffff
-        # Use correct pack format string based on size and desired endianness (usually little)
-        self.pack_fmt = '<Q' if arch == 'x64' else '<I'
+        # Use host long size for ptrace word operations (compat tracee on 64-bit host still uses 8-byte words)
+        host_long_bytes = ctypes.sizeof(c_long)
+        self.word_size = host_long_bytes
+        if host_long_bytes == 8:
+            self.word_mask = 0xffffffffffffffff
+            self.pack_fmt = '<Q'
+        else:
+            self.word_mask = 0xffffffff
+            self.pack_fmt = '<I'
 
     def _ptrace_call(self, request, pid, addr, data):
         """Wrapper for libc.ptrace with improved type handling for 'data'."""
@@ -1915,13 +1917,14 @@ class Rappel:
                     # Update current address for next instruction based on EIP/RIP
                     if self.arch == 'x64':
                          # If it stopped at the *next* byte (intended INT3):
-                         expected_next_addr = self.current_addr + instruction_size
+                         expected_next_addr = self.current_addr + instruction_size + 1
                          actual_next_addr = self.proc_info.regs_struct.rip
                          if actual_next_addr != expected_next_addr:
                               logging.warning(f"[!] Warning: RIP is {actual_next_addr:#x}, expected {expected_next_addr:#x}. Control flow changed?")
                          self.current_addr = actual_next_addr
                     else: # x86
-                         expected_next_addr = self.current_addr + instruction_size
+                         # Account for INT3 size (1 byte) at the next location
+                         expected_next_addr = self.current_addr + instruction_size + 1
                          actual_next_addr = self.proc_info.regs_struct.eip
                          if actual_next_addr != expected_next_addr:
                               logging.warning(f"[!] Warning: EIP is {actual_next_addr:#x}, expected {expected_next_addr:#x}. Control flow changed?")
@@ -1980,9 +1983,9 @@ class Rappel:
             self.child_pid = -1
 
         # Close and delete the temporary executable file
-        if hasattr(self, 'exe_fd_obj') and self.exe_fd_obj is not None:
-             RappelExe.cleanup(self.exe_fd_obj)
-             self.exe_fd_obj = None
+        if self.exe_file_obj is not None:
+             RappelExe.cleanup(self.exe_file_obj)
+             self.exe_file_obj = None
              self.exe_fd = -1
              self.exe_path = None
         elif self.exe_path and os.path.exists(self.exe_path): # Fallback if fd_obj is lost
@@ -2017,7 +2020,7 @@ def main(args):
     PACK_SIZE = 8 if settings['arch'] == 'x64' else 4
 
 
-    print(f"--- PyRappel Interactive Assembler ---")
+    print("--- PyRappel Interactive Assembler ---")
     print(f"Architecture: {settings['arch']}")
     print(f"Start Address: {settings['start_addr']:#x}")
     print(f"Show All Regs: {settings['all_regs']}")
