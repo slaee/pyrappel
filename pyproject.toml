@@ -1,0 +1,11 @@
+[project]
+name = "pyrappel"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "keystone-engine>=0.9.2",
+    "pwntools>=4.14.1",
+    "python-ptrace>=0.9.9",
+]
