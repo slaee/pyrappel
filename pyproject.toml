@@ -9,3 +9,6 @@ dependencies = [
     "pwntools>=4.14.1",
     "python-ptrace>=0.9.9",
 ]
+
+[project.scripts]
+pyrappel = "pyrappel.cli:main"
