@@ -1,3 +1,0 @@
-keystone-engine
-python-ptrace
-pwntools
