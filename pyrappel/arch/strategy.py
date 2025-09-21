@@ -136,7 +136,7 @@ class X86Strategy(ArchStrategy):
         e = regs.eflags; oe = old.eflags
         cf, pf, af, zf, sf, df, of = (e & 1), (e >> 2) & 1, (e >> 4) & 1, (e >> 6) & 1, (e >> 7) & 1, (e >> 10) & 1, (e >> 11) & 1
         ocf, opf, oaf, ozf, osf, odf, oof = (oe & 1), (oe >> 2) & 1, (oe >> 4) & 1, (oe >> 6) & 1, (oe >> 7) & 1, (oe >> 10) & 1, (oe >> 11) & 1
-        print("Flags=[", end=""); print_bit("CF:", cf, ocf, " "); print_bit("PF:", pf, opf, " "); print_bit("AF:", af, oaf, " "); print_bit("ZF:", zf, ozf, " "); print_bit("SF:", sf, osf, " "); print_bit("DF:", df, odf, " "); print_bit("OF:", of, oof, "] ")
+        print("\nFlags=[", end=""); print_bit("CF:", cf, ocf, " "); print_bit("PF:", pf, opf, " "); print_bit("AF:", af, oaf, " "); print_bit("ZF:", zf, ozf, " "); print_bit("SF:", sf, osf, " "); print_bit("DF:", df, odf, " "); print_bit("OF:", of, oof, "] ")
         print("eflags=", end=""); p32("eflags"); print("\n", end="")
         print("cs=", end=""); p16("xcs"); print(" ", end="")
         print("ss=", end=""); p16("xss"); print(" ", end="")
@@ -230,7 +230,7 @@ class X64Strategy(ArchStrategy):
         e = regs.eflags; oe = old.eflags
         cf, pf, af, zf, sf, df, of = (e & 1), (e >> 2) & 1, (e >> 4) & 1, (e >> 6) & 1, (e >> 7) & 1, (e >> 10) & 1, (e >> 11) & 1
         ocf, opf, oaf, ozf, osf, odf, oof = (oe & 1), (oe >> 2) & 1, (oe >> 4) & 1, (oe >> 6) & 1, (oe >> 7) & 1, (oe >> 10) & 1, (oe >> 11) & 1
-        print("Flags=[", end=""); print_bit("CF:", cf, ocf, " "); print_bit("PF:", pf, opf, " "); print_bit("AF:", af, oaf, " "); print_bit("ZF:", zf, ozf, " "); print_bit("SF:", sf, osf, " "); print_bit("DF:", df, odf, " "); print_bit("OF:", of, oof, "] ")
+        print("\nFlags=[", end=""); print_bit("CF:", cf, ocf, " "); print_bit("PF:", pf, opf, " "); print_bit("AF:", af, oaf, " "); print_bit("ZF:", zf, ozf, " "); print_bit("SF:", sf, osf, " "); print_bit("DF:", df, odf, " "); print_bit("OF:", of, oof, "] ")
         print("rflags=", end=""); p64("eflags"); print("\n", end="")
         for n in ["cs","ss","ds","es","fs","gs"]:
             label = (n+"=")
