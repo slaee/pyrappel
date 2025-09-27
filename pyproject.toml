@@ -1,8 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "pyrappel"
 version = "0.1.0"
-description = "Add your description here"
+description = "Interactive assembler with ptrace - Python version of rappel"
 readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "PyRappel Contributors"}
+]
+maintainers = [
+    {name = "PyRappel Contributors"}
+]
+keywords = ["assembler", "ptrace", "reverse-engineering", "binary-analysis", "security"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Assemblers",
+    "Topic :: Software Development :: Debuggers",
+]
 requires-python = ">=3.11"
 dependencies = [
     "keystone-engine>=0.9.2",
@@ -10,5 +35,20 @@ dependencies = [
     "python-ptrace>=0.9.9",
 ]
 
+[project.urls]
+Homepage = "https://github.com/yrp604/rappel"
+Repository = "https://github.com/yrp604/rappel"
+Issues = "https://github.com/yrp604/rappel/issues"
+
 [project.scripts]
 pyrappel = "pyrappel.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pyrappel"]
