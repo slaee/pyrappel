@@ -25,8 +25,8 @@ def main(argv=None):
     print(f"Architecture: {settings['arch']}")
     print(f"Start Address: {settings['start_addr']:#x}")
     print(f"Show All Regs: {settings['all_regs']}")
-    print(f"Temp Dir: {settings['path']}")
     print(f"Page Size: {PAGE_SIZE}")
+    print("Author: @slaee")
     print("-" * 38)
 
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)

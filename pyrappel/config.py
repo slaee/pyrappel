@@ -6,7 +6,7 @@ user_path = os.getenv('HOME')
 
 settings = {
     # 'path': f'{user_path}/.rappel/exe',
-    'path': 'bin',  # Use a local bin directory for temporary files
+    'path': '/tmp',  # Use a local bin directory for temporary files
     'start_addr': 0x400000,
     'arch': 'x64',  # Default arch
     'all_regs': False,  # Default to showing only common regs

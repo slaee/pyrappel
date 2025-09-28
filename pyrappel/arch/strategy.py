@@ -223,18 +223,34 @@ class X64Strategy(ArchStrategy):
         def p16(name):
             v = getattr(regs, name); o = getattr(old, name)
             print((REGFMT16.format(v) if v == o else f"{RED}{REGFMT16.format(v)}{RST}"), end="")
-        for group in [["rax","rbx","rcx"],["rdx","rsi","rdi"],["rip","rsp","rbp"],["r8","r9","r10"],["r11","r12","r13"],["r14","r15"]]:
-            for i, n in enumerate(group):
-                label = (" "+n+"=") if i>0 else n+"="
-                print(label, end=""); p64(n); print(" " if i<2 else "\n", end="")
+        print("rax=", end=""); p64("rax"); print(" ", end="")
+        print("rbx=", end=""); p64("rbx"); print(" ", end="")
+        print("rcx=", end=""); p64("rcx"); print("\n", end="")
+        print("rdx=", end=""); p64("rdx"); print(" ", end="")
+        print("rsi=", end=""); p64("rsi"); print(" ", end="")
+        print("rdi=", end=""); p64("rdi"); print("\n", end="")
+        print("rip=", end=""); p64("rip"); print(" ", end="")
+        print("rsp=", end=""); p64("rsp"); print(" ", end="")
+        print("rbp=", end=""); p64("rbp"); print("\n", end="")
+        print(" r8=", end=""); p64("r8"); print(" ", end="")
+        print(" r9=", end=""); p64("r9"); print(" ", end="")
+        print("r10=", end=""); p64("r10"); print("\n", end="")
+        print("r11=", end=""); p64("r11"); print(" ", end="")
+        print("r12=", end=""); p64("r12"); print(" ", end="")
+        print("r13=", end=""); p64("r13"); print("\n", end="")
+        print("r14=", end=""); p64("r14"); print(" ", end="")
+        print("r15=", end=""); p64("r15"); print("\n", end="")
         e = regs.eflags; oe = old.eflags
         cf, pf, af, zf, sf, df, of = (e & 1), (e >> 2) & 1, (e >> 4) & 1, (e >> 6) & 1, (e >> 7) & 1, (e >> 10) & 1, (e >> 11) & 1
         ocf, opf, oaf, ozf, osf, odf, oof = (oe & 1), (oe >> 2) & 1, (oe >> 4) & 1, (oe >> 6) & 1, (oe >> 7) & 1, (oe >> 10) & 1, (oe >> 11) & 1
         print("\nFlags=[", end=""); print_bit("CF:", cf, ocf, " "); print_bit("PF:", pf, opf, " "); print_bit("AF:", af, oaf, " "); print_bit("ZF:", zf, ozf, " "); print_bit("SF:", sf, osf, " "); print_bit("DF:", df, odf, " "); print_bit("OF:", of, oof, "] ")
         print("rflags=", end=""); p64("eflags"); print("\n", end="")
-        for n in ["cs","ss","ds","es","fs","gs"]:
-            label = (n+"=")
-            print(label, end=""); p16(n); print(" " if n!="gs" else "\n", end="")
+        print("cs=", end=""); p16("cs"); print(" ", end="")
+        print("ss=", end=""); p16("ss"); print(" ", end="")
+        print("ds=", end=""); p16("ds"); print(" ", end="")
+        print("es=", end=""); p16("es"); print(" ", end="")
+        print("fs=", end=""); p16("fs"); print(" ", end="")
+        print("gs=", end=""); p16("gs"); print("\n", end="")
         print("fs_base=", end=""); p64("fs_base"); print(" ", end="")
         print("gs_base=", end=""); p64("gs_base"); print("\n", end="")
         if settings.get('all_regs') == True:
