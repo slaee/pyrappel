@@ -30,11 +30,10 @@ RUN uv venv && \
     source .venv/bin/activate && \
     uv sync
 
+COPY pyrappel /home/user/pyrappel
 COPY pyrappel.py .
-COPY entry.sh .
 
-# Set permissions
-RUN chmod +x entry.sh
+RUN chmod +x pyrappel.py
 
 FROM gcr.io/kctf-docker/challenge@sha256:d884e54146b71baf91603d5b73e563eaffc5a42d494b1e32341a5f76363060fb
 
@@ -50,4 +49,4 @@ EXPOSE 1337
 CMD kctf_setup && \
     socat \
       TCP-LISTEN:1337,reuseaddr,fork \
-      EXEC:"kctf_pow nsjail --config /home/user/nsjail.cfg --cwd /home/user -- ./entry.sh",pty,sane
+      EXEC:"kctf_pow nsjail --config /home/user/nsjail.cfg --cwd /home/user -- ./pyrappel.py -a x64 -s 0x8000000000",pty,sane
